@@ -11,10 +11,10 @@
 </head>
 <body>
     <script type="module">
-        // Three.jsをES Modulesとしてインポート
-      import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
-    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js';
-    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js';
+        // CDNからESモジュールをインポート
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js';
 
         // 基本設定
         const scene = new THREE.Scene();
@@ -30,7 +30,7 @@
         // GLTFLoaderでモデルを読み込む
         const loader = new GLTFLoader();
         loader.load(
-            'model-box.glb', // モデルのパス
+            './model.glb', // モデルのパス
             function (gltf) {
                 const model = gltf.scene;
                 scene.add(model);
@@ -38,7 +38,7 @@
             },
             undefined,
             function (error) {
-                console.error(error);
+                console.error('Error loading model:', error);
             }
         );
 
