@@ -3,20 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Object Viewer</title>
+    <title>3D Test</title>
     <style>
         body { margin: 0; }
         canvas { display: block; }
     </style>
+
+    <!-- インポートマップの定義 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js",
+            "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
+            "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js"
+        }
+    }
+    </script>
 </head>
 <body>
     <script type="module">
-        // CDNからESモジュールをインポート
-       import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-       import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-       import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+        // Three.jsのモジュールをインポート
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-        // 基本設定
+        // Three.jsのシーン、カメラ、レンダラーの設定
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer();
@@ -27,28 +38,28 @@
         const light = new THREE.AmbientLight(0x404040, 2);
         scene.add(light);
 
-        // GLTFLoaderでモデルを読み込む
+        // GLTFモデルをロード
         const loader = new GLTFLoader();
         loader.load(
-            './model-box.glb', // モデルのパス
-            function (gltf) {
+            './model-box.glb', // モデルの相対パス
+            (gltf) => {
                 const model = gltf.scene;
                 scene.add(model);
-                model.rotation.y = Math.PI / 4; // 初期回転
+                model.rotation.y = Math.PI / 4;
             },
             undefined,
-            function (error) {
-                console.error('Error loading model:', error);
+            (error) => {
+                console.error('モデルの読み込み中にエラーが発生しました:', error);
             }
         );
 
-        // カメラ設定
+        // カメラの位置設定
         camera.position.z = 5;
 
-        // コントロール追加（回転・ズーム・移動）
+        // OrbitControlsを追加（回転、ズーム）
         const controls = new OrbitControls(camera, renderer.domElement);
 
-        // アニメーション
+        // アニメーションループ
         function animate() {
             requestAnimationFrame(animate);
             renderer.render(scene, camera);
