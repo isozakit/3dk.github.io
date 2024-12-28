@@ -10,9 +10,12 @@
     </style>
 </head>
 <body>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.154.0/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script>
+    <script type="module">
+        // Three.jsをES Modulesとしてインポート
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js';
+
         // 基本設定
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -21,11 +24,11 @@
         document.body.appendChild(renderer.domElement);
 
         // 環境光
-        const light = new THREE.AmbientLight(0x404040, 2); // ソフトな白色光
+        const light = new THREE.AmbientLight(0x404040, 2);
         scene.add(light);
 
         // GLTFLoaderでモデルを読み込む
-        const loader = new THREE.GLTFLoader();
+        const loader = new GLTFLoader();
         loader.load(
             'model-box.glb', // モデルのパス
             function (gltf) {
@@ -43,7 +46,7 @@
         camera.position.z = 5;
 
         // コントロール追加（回転・ズーム・移動）
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement);
 
         // アニメーション
         function animate() {
