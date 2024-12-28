@@ -1,18 +1,56 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Viewer</title>
-  <style>
-    body, html { margin: 0; overflow: hidden; height: 100%; }
-    iframe { width: 100%; height: 100%; border: none; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Object Viewer</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
 </head>
 <body>
-  <iframe 
-    src="https://sketchfab.com/3d-models/davinciair-s27-0b79f93ca2734bd493ee5ee0fc557935/embed?autostart=1&ui_infos=0&ui_controls=1&ui_stop=0&ui_watermark=1" 
-    allowfullscreen>
-  </iframe>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.154.0/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // 基本設定
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 環境光
+        const light = new THREE.AmbientLight(0x404040, 2); // ソフトな白色光
+        scene.add(light);
+
+        // GLTFLoaderでモデルを読み込む
+        const loader = new THREE.GLTFLoader();
+        loader.load(
+            'model-box.glb', // モデルのパス
+            function (gltf) {
+                const model = gltf.scene;
+                scene.add(model);
+                model.rotation.y = Math.PI / 4; // 初期回転
+            },
+            undefined,
+            function (error) {
+                console.error(error);
+            }
+        );
+
+        // カメラ設定
+        camera.position.z = 5;
+
+        // コントロール追加（回転・ズーム・移動）
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+        // アニメーション
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
 </body>
 </html>
