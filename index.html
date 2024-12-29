@@ -14,36 +14,31 @@
     {
         "imports": {
             "three": "https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js",
-            "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
-            "OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js"
+            "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js"
         }
     }
     </script>
 </head>
 <body>
     <script type="module">
-        // Three.jsのモジュールをインポート
         import * as THREE from 'three';
         import { GLTFLoader } from 'GLTFLoader';
-        import { OrbitControls } from 'OrbitControls';
 
-        // Three.jsのシーン、カメラ、レンダラーの設定
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // 環境光
         const light = new THREE.AmbientLight(0x404040, 2);
         scene.add(light);
 
-        // GLTFモデルをロード
+        let model;
         const loader = new GLTFLoader();
         loader.load(
-            './model-box.glb', // モデルの相対パス
+            './model-box.glb',
             (gltf) => {
-                const model = gltf.scene;
+                model = gltf.scene;
                 scene.add(model);
                 model.rotation.y = Math.PI / 4;
             },
@@ -53,23 +48,46 @@
             }
         );
 
-        // カメラの位置設定
         camera.position.z = 5;
 
-        // OrbitControlsを追加（回転、ズーム）
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; // 減衰を有効にする
-        controls.dampingFactor = 0.01; // 減衰係数
-        controls.rotateSpeed = 0.5; // 回転速度
+        let isTouching = false;
+        let previousTouchX = 0;
+        let rotationVelocity = 0;
 
-        // スマホ向け調整
-        //controls.touches = {
-        //    ONE: THREE.TOUCH.ROTATE, // 1本指で回転
-        //};
+        // タッチイベントの設定
+        window.addEventListener('touchstart', (event) => {
+            isTouching = true;
+            previousTouchX = event.touches[0].clientX;
+            rotationVelocity = 0;
+        });
+
+        window.addEventListener('touchmove', (event) => {
+            if (isTouching && model) {
+                const touchX = event.touches[0].clientX;
+                const deltaX = touchX - previousTouchX;
+                rotationVelocity = deltaX * 0.01; // 回転速度を計算
+                model.rotation.y += rotationVelocity;
+                previousTouchX = touchX;
+            }
+        });
+
+        window.addEventListener('touchend', () => {
+            isTouching = false;
+        });
 
         // アニメーションループ
         function animate() {
             requestAnimationFrame(animate);
+
+            // 慣性による回転
+            if (!isTouching && model) {
+                rotationVelocity *= 0.95; // 慣性減衰
+                model.rotation.y += rotationVelocity;
+                if (Math.abs(rotationVelocity) < 0.001) {
+                    rotationVelocity = 0;
+                }
+            }
+
             renderer.render(scene, camera);
         }
         animate();
