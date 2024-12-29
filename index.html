@@ -51,23 +51,33 @@
         camera.position.z = 5;
 
         let isTouching = false;
-        let previousTouchX = 0;
-        let rotationVelocity = 0;
+        let previousTouch = { x: 0, y: 0 };
+        let rotationVelocity = { x: 0, y: 0 };
 
         // タッチイベントの設定
         window.addEventListener('touchstart', (event) => {
             isTouching = true;
-            previousTouchX = event.touches[0].clientX;
-            rotationVelocity = 0;
+            previousTouch.x = event.touches[0].clientX;
+            previousTouch.y = event.touches[0].clientY;
+            rotationVelocity.x = 0;
+            rotationVelocity.y = 0;
         });
 
         window.addEventListener('touchmove', (event) => {
             if (isTouching && model) {
                 const touchX = event.touches[0].clientX;
-                const deltaX = touchX - previousTouchX;
-                rotationVelocity = deltaX * 0.05; // 回転速度を計算
-                model.rotation.y += rotationVelocity;
-                previousTouchX = touchX;
+                const touchY = event.touches[0].clientY;
+                const deltaX = touchX - previousTouch.x;
+                const deltaY = touchY - previousTouch.y;
+
+                rotationVelocity.x = deltaY * 0.05; // Y方向の回転速度
+                rotationVelocity.y = deltaX * 0.05; // X方向の回転速度
+
+                model.rotation.x += rotationVelocity.x;
+                model.rotation.y += rotationVelocity.y;
+
+                previousTouch.x = touchX;
+                previousTouch.y = touchY;
             }
         });
 
@@ -81,11 +91,14 @@
 
             // 慣性による回転
             if (!isTouching && model) {
-                rotationVelocity *= 0.95; // 慣性減衰
-                model.rotation.y += rotationVelocity;
-                if (Math.abs(rotationVelocity) < 0.001) {
-                    rotationVelocity = 0;
-                }
+                rotationVelocity.x *= 0.95; // 慣性減衰 (X)
+                rotationVelocity.y *= 0.95; // 慣性減衰 (Y)
+
+                model.rotation.x += rotationVelocity.x;
+                model.rotation.y += rotationVelocity.y;
+
+                if (Math.abs(rotationVelocity.x) < 0.001) rotationVelocity.x = 0;
+                if (Math.abs(rotationVelocity.y) < 0.001) rotationVelocity.y = 0;
             }
 
             renderer.render(scene, camera);
