@@ -58,7 +58,7 @@
 
         // OrbitControlsを追加（回転、ズーム）
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; // 減衰を有効にする
+        controls.enableDamping = false; // 減衰を有効にする
         controls.dampingFactor = 0.1; // 減衰係数
         controls.rotateSpeed = 2.0; // 回転速度
 
