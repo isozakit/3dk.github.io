@@ -62,6 +62,10 @@
         controls.dampingFactor = 0.1; // 減衰係数
         controls.rotateSpeed = 2.0; // 回転速度
 
+        // スマホ向け調整
+        controls.touches = {
+            ONE: THREE.TOUCH.ROTATE, // 1本指で回転
+        };
 
         // アニメーションループ
         function animate() {
