@@ -65,7 +65,7 @@
             if (isTouching && model) {
                 const touchX = event.touches[0].clientX;
                 const deltaX = touchX - previousTouchX;
-                rotationVelocity = deltaX * 0.01; // 回転速度を計算
+                rotationVelocity = deltaX * 0.1; // 回転速度を計算
                 model.rotation.y += rotationVelocity;
                 previousTouchX = touchX;
             }
