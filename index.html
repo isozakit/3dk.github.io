@@ -70,8 +70,8 @@
                 const deltaX = touchX - previousTouch.x;
                 const deltaY = touchY - previousTouch.y;
 
-                rotationVelocity.x = deltaY * 0.05; // Y方向の回転速度
-                rotationVelocity.y = deltaX * 0.05; // X方向の回転速度
+                rotationVelocity.x = deltaX * 0.05; // Y方向の回転速度
+                rotationVelocity.y = deltaY * 0.05; // X方向の回転速度
 
                 model.rotation.x += rotationVelocity.x;
                 model.rotation.y += rotationVelocity.y;
