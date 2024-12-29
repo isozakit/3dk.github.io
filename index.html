@@ -26,15 +26,17 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        //const renderer = new THREE.WebGLRenderer();
-        const renderer = new THREE.WebGLRenderer({ alpha: true });
-        renderer.setClearColor(0x000000, 0);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        //renderer.setClearColor(0xffffff);
+renderer.setClearColor(0xffffff);
         document.body.appendChild(renderer.domElement);
 
-        const light = new THREE.AmbientLight(0x404040, 2);
+        const light = new THREE.AmbientLight(0xffffff, 3);
         scene.add(light);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
 
         let model;
         const loader = new GLTFLoader();
