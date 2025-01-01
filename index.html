@@ -12,9 +12,6 @@
     <meta property="og:title" content="回せば回すほど福がクル。大きく回せば大きくクル！">
     <meta property="og:description" content="3Dモデルを操作して楽しむ年賀状です">
     <meta property="og:image" content="image01.png">
-    <!--meta property="og:url" content="https://isozakit.github.io/3dtest2.github.io/index.html"-->
-    <!--meta property="og:type" content="website"-->
-    <!--meta name="twitter:card" content="summary_large_image"-->
 
     <!-- インポートマップの定義 -->
     <script type="importmap">
@@ -35,7 +32,6 @@
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        //renderer.setClearColor(0xffffff);
         document.body.appendChild(renderer.domElement);
 
         const light = new THREE.AmbientLight(0xffffff, 3);
@@ -66,7 +62,6 @@
         let previousTouch = { x: 0, y: 0 };
         let rotationVelocity = { x: 0, y: 0 };
 
-        // タッチイベントの設定
         window.addEventListener('touchstart', (event) => {
             isTouching = true;
             previousTouch.x = event.touches[0].clientX;
@@ -82,8 +77,8 @@
                 const deltaX = touchX - previousTouch.x;
                 const deltaY = touchY - previousTouch.y;
 
-                rotationVelocity.y = deltaX * 0.02; // X方向の移動でY軸を回転
-                rotationVelocity.x = -deltaY * 0.02; // Y方向の移動でX軸を回転
+                rotationVelocity.y = deltaX * 0.02;
+                rotationVelocity.x = -deltaY * 0.02;
 
                 model.rotation.x += rotationVelocity.x;
                 model.rotation.y += rotationVelocity.y;
@@ -97,14 +92,38 @@
             isTouching = false;
         });
 
-        // アニメーションループ
+        // パーティクル用のジオメトリとマテリアルを作成
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 1000;
+        const positions = new Float32Array(starCount * 3);
+
+        for (let i = 0; i < starCount * 3; i++) {
+            positions[i] = (Math.random() - 0.5) * 100;
+        }
+
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.2,
+            transparent: true,
+            opacity: 0.8,
+        });
+
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        function animateStars() {
+            stars.rotation.x += 0.001;
+            stars.rotation.y += 0.001;
+        }
+
         function animate() {
             requestAnimationFrame(animate);
 
-            // 慣性による回転
             if (!isTouching && model) {
-                rotationVelocity.x *= 0.95; // 慣性減衰 (X)
-                rotationVelocity.y *= 0.95; // 慣性減衰 (Y)
+                rotationVelocity.x *= 0.95;
+                rotationVelocity.y *= 0.95;
 
                 model.rotation.x += rotationVelocity.x;
                 model.rotation.y += rotationVelocity.y;
@@ -113,6 +132,7 @@
                 if (Math.abs(rotationVelocity.y) < 0.001) rotationVelocity.y = 0;
             }
 
+            animateStars();
             renderer.render(scene, camera);
         }
         animate();
