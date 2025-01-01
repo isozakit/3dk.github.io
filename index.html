@@ -96,16 +96,24 @@
         const starGeometry = new THREE.BufferGeometry();
         const starCount = 1000;
         const positions = new Float32Array(starCount * 3);
+        const colors = new Float32Array(starCount * 3);
 
-        for (let i = 0; i < starCount * 3; i++) {
-            positions[i] = (Math.random() - 0.5) * 100;
+        for (let i = 0; i < starCount; i++) {
+            positions[i * 3] = (Math.random() - 0.5) * 100;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 100;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+
+            colors[i * 3] = Math.random(); // Red
+            colors[i * 3 + 1] = Math.random(); // Green
+            colors[i * 3 + 2] = Math.random(); // Blue
         }
 
         starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        starGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const starMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
             size: 0.2,
+            vertexColors: true, // 各頂点に色を設定
             transparent: true,
             opacity: 0.8,
         });
@@ -114,8 +122,8 @@
         scene.add(stars);
 
         function animateStars() {
-            stars.rotation.x += 0.0002;
-            stars.rotation.y += 0.0002;
+            stars.rotation.x += 0.0001;
+            stars.rotation.y += 0.0001;
         }
 
         function animate() {
