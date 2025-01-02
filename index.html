@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D年賀状</title>
+    <title>[スマホPC対応版]3D年賀状</title>
     <style>
         body { margin: 0; }
         canvas { display: block; }
@@ -58,24 +58,25 @@
 
         camera.position.z = 5;
 
-        let isTouching = false;
-        let previousTouch = { x: 0, y: 0 };
+        let isInteracting = false;
+        let startInteraction = { x: 0, y: 0 };
         let rotationVelocity = { x: 0, y: 0 };
 
-        window.addEventListener('touchstart', (event) => {
-            isTouching = true;
-            previousTouch.x = event.touches[0].clientX;
-            previousTouch.y = event.touches[0].clientY;
+        function onStart(event) {
+            isInteracting = true;
+            startInteraction.x = event.clientX || event.touches[0].clientX;
+            startInteraction.y = event.clientY || event.touches[0].clientY;
             rotationVelocity.x = 0;
             rotationVelocity.y = 0;
-        });
+        }
 
-        window.addEventListener('touchmove', (event) => {
-            if (isTouching && model) {
-                const touchX = event.touches[0].clientX;
-                const touchY = event.touches[0].clientY;
-                const deltaX = touchX - previousTouch.x;
-                const deltaY = touchY - previousTouch.y;
+        function onMove(event) {
+            if (isInteracting && model) {
+                const currentX = event.clientX || event.touches[0].clientX;
+                const currentY = event.clientY || event.touches[0].clientY;
+
+                const deltaX = currentX - startInteraction.x;
+                const deltaY = currentY - startInteraction.y;
 
                 rotationVelocity.y = deltaX * 0.02;
                 rotationVelocity.x = -deltaY * 0.02;
@@ -83,14 +84,22 @@
                 model.rotation.x += rotationVelocity.x;
                 model.rotation.y += rotationVelocity.y;
 
-                previousTouch.x = touchX;
-                previousTouch.y = touchY;
+                startInteraction.x = currentX;
+                startInteraction.y = currentY;
             }
-        });
+        }
 
-        window.addEventListener('touchend', () => {
-            isTouching = false;
-        });
+        function onEnd() {
+            isInteracting = false;
+        }
+
+        window.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+
+        window.addEventListener('touchstart', onStart);
+        window.addEventListener('touchmove', onMove);
+        window.addEventListener('touchend', onEnd);
 
         // パーティクル用のジオメトリとマテリアルを作成
         const starGeometry = new THREE.BufferGeometry();
@@ -129,7 +138,7 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            if (!isTouching && model) {
+            if (!isInteracting && model) {
                 rotationVelocity.x *= 0.95;
                 rotationVelocity.y *= 0.95;
 
