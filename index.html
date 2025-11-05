@@ -26,7 +26,17 @@
     </aside>
     <main id="viewer"></main>
   </div>
-
+  
+<script type="importmap">
+  {
+    "imports": {
+      "three": "../three/build/three.module.js",
+      "three/examples/jsm/controls/OrbitControls": "../three/examples/jsm/controls/OrbitControls.js"
+      // Add other Three.js modules you need here
+    }
+  }
+</script>
+  
  <script type="module">
 /* モジュール版 three + examples/jsm を CDN から直接 import */
 import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
@@ -208,5 +218,6 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
