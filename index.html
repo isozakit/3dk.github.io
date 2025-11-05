@@ -134,21 +134,84 @@ loader.load(GLB_PATH, (gltf) => {
 /* ============================================================
    以下：UI とユーティリティ（mapping を使ってグループ UI を作る）
    ============================================================ */
+// 名前解決ヘルパー：exact -> includes -> regex-ish（ドット表記違い等）で柔軟に拾う
+function resolveNodeByName(root, name) {
+  if (!name) return null;
+  // 1) 完全一致
+  let found = null;
+  root.traverse(n => {
+    if (found) return;
+    if (n.name === name) found = n;
+  });
+  if (found) return found;
 
+  // 2) 正規化して完全一致（先頭の装飾削除）
+  const normTarget = (name || '').toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
+  root.traverse(n => {
+    if (found) return;
+    const norm = (n.name || '').toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
+    if (norm === normTarget) found = n;
+  });
+  if (found) return found;
+
+  // 3) 部分一致（包含）
+  root.traverse(n => {
+    if (found) return;
+    const nm = n.name || '';
+    if (nm.includes(name)) found = n;
+  });
+  if (found) return found;
+
+  // 4) 部分一致 on normalized name
+  root.traverse(n => {
+    if (found) return;
+    const norm = (n.name || '').toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
+    if (norm.includes(normTarget)) found = n;
+  });
+  return found;
+}
+
+// setVisibilityRecursive: visible プロパティを必ず設定する（undefined チェック削除）
+function setVisibilityRecursive(node, visible) {
+  if (!node) return;
+  // 必ず設定する（Object3D に visible は存在するはず）
+  try {
+    node.visible = visible;
+  } catch (e) {
+    // 万が一設定できないノードがあれば無視
+    console.warn('cannot set visible on node', node, e);
+  }
+  if (node.children && node.children.length) {
+    node.children.forEach(c => setVisibilityRecursive(c, visible));
+  }
+}
+
+// buildGroupsFromMapping の改良版：展開ボタンを外し、部分一致で足りないノードを補正
 function buildGroupsFromMapping(root, mapping, maxSubDepth = 2) {
   controlsPane.innerHTML = '';
   if (!root) { controlsPane.innerText = 'モデル未ロード'; return; }
 
-  // 名前 -> ノード マップを作る
+  // 名前 -> node マップ（参考用）
   const nameToNode = {};
-  root.traverse(n => {
-    if (n.name) nameToNode[n.name] = n;
-  });
+  root.traverse(n => { if (n.name) nameToNode[n.name] = n; });
 
   const fragment = document.createDocumentFragment();
   let idx = 0;
+
   for (const [label, nameList] of Object.entries(mapping)) {
-    const groupNodes = nameList.map(nm => nameToNode[nm]).filter(Boolean);
+    // resolve each mapped name to an actual node (flexible)
+    const groupNodes = [];
+    const unresolved = [];
+    nameList.forEach(nm => {
+      const node = nameToNode[nm] || resolveNodeByName(root, nm);
+      if (node) groupNodes.push(node);
+      else unresolved.push(nm);
+    });
+
+    // ログ出力（デバッグ用）: 解決できなかった名前を console に出す
+    if (unresolved.length) {
+      console.warn(`mapping: label "${label}" - unresolved nodes:`, unresolved);
+    }
 
     const row = document.createElement('div');
     row.className = 'collection-item';
@@ -159,33 +222,30 @@ function buildGroupsFromMapping(root, mapping, maxSubDepth = 2) {
     checkbox.type = 'checkbox';
     checkbox.id = `map_grp_${idx}`;
     checkbox.style.marginRight = '8px';
+    // 初期チェック状態は groupNodes の最初の node の visible を参照（なければ true）
     checkbox.checked = groupNodes.length ? (typeof groupNodes[0].visible !== 'undefined' ? groupNodes[0].visible : true) : true;
     if (!groupNodes.length) checkbox.disabled = true;
 
     const labelEl = document.createElement('label');
     labelEl.htmlFor = checkbox.id;
     labelEl.textContent = label;
-
-    const expandBtn = document.createElement('button');
-    expandBtn.textContent = '表示▼';
-    expandBtn.style.marginLeft = '12px';
-    expandBtn.style.fontSize = '12px';
-    expandBtn.style.padding = '3px 6px';
-
-    const subContainer = document.createElement('div');
-    subContainer.style.marginLeft = '18px';
-    subContainer.style.display = 'none';
+    labelEl.style.cursor = groupNodes.length ? 'pointer' : 'default';
 
     row.appendChild(checkbox);
     row.appendChild(labelEl);
-    row.appendChild(expandBtn);
     fragment.appendChild(row);
+
+    // サブコンテナ：展開ボタンを廃止したいとのことなので、最初からサブツリーを表示しておく
+    const subContainer = document.createElement('div');
+    subContainer.style.marginLeft = '18px';
+    subContainer.style.display = 'block'; // 常に展開（深さ maxSubDepth まで createSubTree が制御）
     fragment.appendChild(subContainer);
 
-    // チェックでグループ内全ノードを切り替え
+    // checkbox の挙動
     checkbox.addEventListener('change', () => {
       const v = checkbox.checked;
       groupNodes.forEach(n => setVisibilityRecursive(n, v));
+      // UI 側のサブチェックも同期
       subContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = v);
     });
 
@@ -196,15 +256,7 @@ function buildGroupsFromMapping(root, mapping, maxSubDepth = 2) {
       checkbox.dispatchEvent(new Event('change'));
     });
 
-    // expand ボタン
-    expandBtn.addEventListener('click', () => {
-      if (!groupNodes.length) return;
-      const opened = subContainer.style.display !== 'none';
-      subContainer.style.display = opened ? 'none' : 'block';
-      expandBtn.textContent = opened ? '表示▼' : '非表示▲';
-    });
-
-    // サブツリー: 各 groupNode の subtree を追加（複数ノードがある場合はそれぞれ）
+    // 各ノードの subtree を追加
     groupNodes.forEach(n => {
       subContainer.appendChild(createSubTree(n, 0, maxSubDepth));
     });
@@ -216,10 +268,11 @@ function buildGroupsFromMapping(root, mapping, maxSubDepth = 2) {
 
   // 全表示ボタン
   resetBtn.onclick = () => {
-    root.traverse(n => { if (typeof n.visible !== 'undefined') n.visible = true; });
+    root.traverse(n => { try { n.visible = true; } catch(e){} });
     document.querySelectorAll('#controls input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; });
   };
 }
+
 
 /* createSubTree / setVisibilityRecursive （ツリー表示と ON/OFF 処理） */
 function createSubTree(node, depth, maxDepth) {
@@ -285,12 +338,6 @@ function createSubTree(node, depth, maxDepth) {
   return wrapper;
 }
 
-function setVisibilityRecursive(node, visible) {
-  if (typeof node.visible !== 'undefined') node.visible = visible;
-  if (node.children && node.children.length) {
-    node.children.forEach(c => setVisibilityRecursive(c, visible));
-  }
-}
 
 /* リサイズ & レンダーループ */
 window.addEventListener('resize', () => {
@@ -339,6 +386,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
