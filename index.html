@@ -1,164 +1,212 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>돌리는 연하장</title>
-    <style>
-        body { margin: 0; }
-        canvas { display: block; }
-    </style>
-    <!-- OGP設定 -->
-    <meta property="og:title" content="돌리면 돌수록 복을 많이 받는다.">
-    <meta property="og:description" content="돌리는 연하장입니다.">
-    <meta property="og:image" content="image01.png">
-
-    <!-- インポートマップの定義 -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js",
-            "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js"
-        }
-    }
-    </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GLB Viewer — Collection 切替スイッチ</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP';}
+    #app{display:grid;grid-template-columns:300px 1fr;height:100vh}
+    #sidebar{padding:12px;border-right:1px solid #ddd;overflow:auto}
+    #viewer{background:#111}
+    .collection-item{display:flex;align-items:center;margin:6px 0}
+    label{margin-left:8px}
+    header{font-weight:700;margin-bottom:8px}
+    .hint{font-size:13px;color:#666;margin-top:10px}
+    button{margin-top:8px;padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff}
+  </style>
 </head>
 <body>
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'GLTFLoader';
+  <div id="app">
+    <aside id="sidebar">
+      <header>コレクション表示切替</header>
+      <div id="controls">読み込み中…</div>
+      <div class="hint">※GLB 内のノード名（Collection等）を元に自動で一覧化します。ノード名は Blender 等で設定してください。</div>
+      <button id="resetBtn">全て表示</button>
+    </aside>
+    <main id="viewer"></main>
+  </div>
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+  <!-- three.js と例・ローダーを CDN から読み込み -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
 
-        const light = new THREE.AmbientLight(0xffffff, 3);
-        scene.add(light);
+  <script>
+    // --- 設定 ---
+    // GLB はリポジトリの models フォルダに入れておく想定
+    const GLB_PATH = './models/mouthmove-demo2-18.glb';
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
-        directionalLight.position.set(5, 5, 5);
-        scene.add(directionalLight);
+    const container = document.getElementById('viewer');
+    const controlsPane = document.getElementById('controls');
+    const resetBtn = document.getElementById('resetBtn');
 
-        let model;
-        const loader = new GLTFLoader();
-        loader.load(
-            './model-box.glb',
-            (gltf) => {
-                model = gltf.scene;
-                scene.add(model);
-                model.rotation.y = Math.PI / 4;
-            },
-            undefined,
-            (error) => {
-                console.error('モデルの読み込み中にエラーが発生しました:', error);
-            }
-        );
+    // three.js セットアップ
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.6, 3);
 
-        camera.position.z = 5;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth - 300, window.innerHeight);
+    container.appendChild(renderer.domElement);
 
-        let isInteracting = false;
-        let startInteraction = { x: 0, y: 0 };
-        let rotationVelocity = { x: 0, y: 0 };
+    const orbit = new THREE.OrbitControls(camera, renderer.domElement);
+    orbit.target.set(0, 1, 0);
+    orbit.update();
 
-        function onStart(event) {
-            isInteracting = true;
-            startInteraction.x = event.clientX || event.touches[0].clientX;
-            startInteraction.y = event.clientY || event.touches[0].clientY;
-            rotationVelocity.x = 0;
-            rotationVelocity.y = 0;
+    // 簡易ライティング
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    hemi.position.set(0, 20, 0);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(3, 10, 10);
+    scene.add(dir);
+
+    // グリッド/軸（任意）
+    const grid = new THREE.GridHelper(10, 10);
+    //scene.add(grid);
+
+    // リビングリスト（表示切替に使う）
+    let collectionNodes = [];
+
+    // GLTF ローダー
+    const loader = new THREE.GLTFLoader();
+    loader.load(GLB_PATH, (gltf) => {
+      const model = gltf.scene || gltf.scenes[0];
+      scene.add(model);
+
+      // カメラ用にバウンディングボックスを計算してズーム調整
+      const bbox = new THREE.Box3().setFromObject(model);
+      const size = bbox.getSize(new THREE.Vector3()).length();
+      const center = bbox.getCenter(new THREE.Vector3());
+      orbit.target.copy(center);
+      orbit.update();
+
+      camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
+      camera.updateProjectionMatrix();
+
+      // コレクション（＝モデル内のノード）を収集して UI を作る
+      collectionNodes = findCollections(model);
+      buildUI(collectionNodes);
+
+    }, (xhr) => {
+      // プログレス表示
+      controlsPane.innerText = `読み込み中… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
+    }, (err) => {
+      controlsPane.innerText = '読み込みに失敗しました。コンソールを確認してください。';
+      console.error(err);
+    });
+
+    // ノードからコレクション候補を探す
+    function findCollections(root) {
+      const list = [];
+      root.traverse((node) => {
+        // Group（グループ）や、メッシュを直接まとめたノードをコレクションとみなす。
+        // 名前が空ならスキップしないで名前を付ける。
+        if ((node.type === 'Group' || node.type === 'Object3D' || node.isMesh) && node.parent && node !== root) {
+          // 親ごとにまとめる — 直下の子をコレクション候補にする
+          // ここでは root の直下と、その下のグループを主に扱う
         }
+      });
 
-        function onMove(event) {
-            if (isInteracting && model) {
-                const currentX = event.clientX || event.touches[0].clientX;
-                const currentY = event.clientY || event.touches[0].clientY;
+      // より直感的な扱いのため、root の直下の子をコレクションとして扱う。
+      root.children.forEach((child, idx) => {
+        const name = child.name && child.name.trim() ? child.name : `Collection_${idx}`;
+        list.push({ node: child, name });
+      });
 
-                const deltaX = currentX - startInteraction.x;
-                const deltaY = currentY - startInteraction.y;
-
-                rotationVelocity.y = deltaX * 0.02;
-                rotationVelocity.x = -deltaY * 0.02;
-
-                model.rotation.x += rotationVelocity.x;
-                model.rotation.y += rotationVelocity.y;
-
-                startInteraction.x = currentX;
-                startInteraction.y = currentY;
-            }
-        }
-
-        function onEnd() {
-            isInteracting = false;
-        }
-
-        window.addEventListener('mousedown', onStart);
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onEnd);
-
-        window.addEventListener('touchstart', onStart);
-        window.addEventListener('touchmove', onMove);
-        window.addEventListener('touchend', onEnd);
-
-        // マウスホイールでズームイン・アウト
-        window.addEventListener('wheel', (event) => {
-            camera.position.z += event.deltaY * 0.01;
-            camera.position.z = Math.max(2, Math.min(10, camera.position.z)); // 制限範囲を設定
+      // もし直下が 1 つだけで、その子がさらに複数のグループを持つ場合、それらを展開して一覧化する
+      if (list.length === 1 && list[0].node.children.length > 1) {
+        const expanded = [];
+        list[0].node.children.forEach((child, idx) => {
+          const name = child.name && child.name.trim() ? child.name : `Collection_${idx}`;
+          expanded.push({ node: child, name });
         });
+        if (expanded.length) list.splice(0, 1, ...expanded);
+      }
 
-        // パーティクル用のジオメトリとマテリアルを作成
-        const starGeometry = new THREE.BufferGeometry();
-        const starCount = 1000;
-        const positions = new Float32Array(starCount * 3);
-        const colors = new Float32Array(starCount * 3);
+      return list;
+    }
 
-        for (let i = 0; i < starCount; i++) {
-            positions[i * 3] = (Math.random() - 0.5) * 100;
-            positions[i * 3 + 1] = (Math.random() - 0.5) * 100;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+    function buildUI(collections) {
+      controlsPane.innerHTML = '';
+      if (!collections.length) {
+        controlsPane.innerText = 'コレクションが見つかりませんでした。ノード名を確認してください。';
+        return;
+      }
 
-            colors[i * 3] = Math.random(); // Red
-            colors[i * 3 + 1] = Math.random(); // Green
-            colors[i * 3 + 2] = Math.random(); // Blue
-        }
+      collections.forEach((c, i) => {
+        const div = document.createElement('div');
+        div.className = 'collection-item';
 
-        starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        starGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = true;
+        input.id = `col_${i}`;
+        input.onchange = () => {
+          c.node.visible = input.checked;
+        };
 
-        const starMaterial = new THREE.PointsMaterial({
-            size: 0.2,
-            vertexColors: true, // 各頂点に色を設定
-            transparent: true,
-            opacity: 0.8,
+        const label = document.createElement('label');
+        label.htmlFor = input.id;
+        label.innerText = c.name;
+
+        div.appendChild(input);
+        div.appendChild(label);
+        controlsPane.appendChild(div);
+      });
+
+      resetBtn.onclick = () => {
+        collections.forEach((c, idx) => {
+          c.node.visible = true;
+          const el = document.getElementById(`col_${idx}`);
+          if (el) el.checked = true;
         });
+      };
+    }
 
-        const stars = new THREE.Points(starGeometry, starMaterial);
-        scene.add(stars);
+    // ウィンドウリサイズ対応
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth - 300;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
 
-        function animateStars() {
-            stars.rotation.x += 0.0001;
-            stars.rotation.y += 0.0001;
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            if (!isInteracting && model) {
-                rotationVelocity.x *= 0.95;
-                rotationVelocity.y *= 0.95;
-
-                model.rotation.x += rotationVelocity.x;
-                model.rotation.y += rotationVelocity.y;
-
-                if (Math.abs(rotationVelocity.x) < 0.001) rotationVelocity.x = 0;
-                if (Math.abs(rotationVelocity.y) < 0.001) rotationVelocity.y = 0;
-            }
-
-            animateStars();
-            renderer.render(scene, camera);
-        }
-        animate();
-    </script>
+    // アニメーションループ
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
 </body>
 </html>
+
+
+<!-- README（短い手順） -->
+
+<!--
+使い方:
+1) リポジトリ構成例:
+   /index.html  <- このファイル
+   /models/mouthmove-demo2-18.glb  <- アップロードした GLB
+
+2) GitHub に push する
+   - リポジトリを作成してファイルを追加して push してください。
+   - GitHub Pages で公開する方法: Settings -> Pages から "branch: main" と "/ (root)" を選ぶか、/docs フォルダに入れて "branch: main /docs" を選択してください。
+   - もしくは gh-pages ブランチを作って公開しても OK。
+
+3) パスの確認
+   - GLB のパスが変わる場合は、index.html 内の GLB_PATH を編集してください。
+
+4) Blender での準備
+   - コレクション名（Collection）をノード名（Object 名）としてエクスポートすると、このビューワで見やすくなります。
+   - ノード名が空の場合は自動で Collection_0 などの名前が付けられます。
+
+補足:
+- より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
+- セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
+-->
