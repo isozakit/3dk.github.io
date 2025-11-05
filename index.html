@@ -111,8 +111,9 @@ loader.load(GLB_PATH, (gltf) => {
   });
 
   // コレクション抽出と UI 構築
-  collectionNodes = findCollections(model);
-  buildUI(collectionNodes);
+  //collectionNodes = findCollections(model);
+  //buildUI(collectionNodes);
+buildTreeUI(model, 2); // 深さ 2 まで初期展開
 
 }, (xhr) => {
   // xhr.total はブラウザ/サーバによって undefined のことがある
@@ -170,27 +171,27 @@ function findCollections(root) {
   return list;
 }
 
-// ---- ツリーUI を構築する関数 ----
-function buildTreeUI(root) {
+   // ---- ツリー UI（深さ制限あり） ----
+function buildTreeUI(root, expandDepth = 2) {
   controlsPane.innerHTML = ''; // クリア
-  const treeRoot = createTreeElement(root);
-  // ルート自体は表示しないでその直下を一覧化（見た目上わかりやすく）
+
+  // top-level: root の直下を表示（複数のルート子がある想定）
   const fragment = document.createDocumentFragment();
   root.children.forEach(child => {
-    fragment.appendChild(createTreeElement(child));
+    fragment.appendChild(createTreeElement(child, 0, expandDepth));
   });
   controlsPane.appendChild(fragment);
 
   // reset ボタン（全てを表示）
   resetBtn.onclick = () => {
-    root.traverse(n => { if (n.visible !== undefined) n.visible = true; });
+    root.traverse(n => { if (typeof n.visible !== 'undefined') n.visible = true; });
     // チェックボックスも全部チェックする
     document.querySelectorAll('#controls input[type="checkbox"]').forEach(cb => cb.checked = true);
   };
 }
 
-// 再帰でツリー要素を作る
-function createTreeElement(node) {
+// 再帰でツリー要素を作る（depth: 現在の深さ、expandDepth: 初期展開する深さ）
+function createTreeElement(node, depth, expandDepth) {
   const wrapper = document.createElement('div');
   wrapper.style.display = 'flex';
   wrapper.style.flexDirection = 'column';
@@ -203,8 +204,9 @@ function createTreeElement(node) {
   row.style.gap = '8px';
   row.style.margin = '4px 0';
 
-  // 折りたたみボタン（子がなければ透明のスペース）
   const hasChildren = node.children && node.children.length > 0;
+
+  // 折りたたみボタン（子がなければ空白）
   const toggleBtn = document.createElement('button');
   toggleBtn.style.border = 'none';
   toggleBtn.style.background = 'transparent';
@@ -215,10 +217,10 @@ function createTreeElement(node) {
   toggleBtn.title = hasChildren ? '展開/折りたたみ' : '';
   row.appendChild(toggleBtn);
 
-  // checkbox
+  // checkbox（ノードの visible を反映）
   const input = document.createElement('input');
   input.type = 'checkbox';
-  input.checked = (node.visible !== undefined) ? node.visible : true;
+  input.checked = (typeof node.visible !== 'undefined') ? node.visible : true;
   row.appendChild(input);
 
   // label
@@ -228,13 +230,13 @@ function createTreeElement(node) {
   label.style.userSelect = 'none';
   row.appendChild(label);
 
-  // 行を wrapper に追加
   wrapper.appendChild(row);
 
-  // 子ノード用コンテナ（初期は折りたたみ）
+  // 子コンテナ
   const childContainer = document.createElement('div');
   childContainer.style.marginLeft = '18px';
-  childContainer.style.display = 'none'; // 折りたたみ状態
+  // 初期表示は expandDepth を参照（depth starts at 0）
+  childContainer.style.display = (hasChildren && depth < expandDepth) ? 'block' : 'none';
   wrapper.appendChild(childContainer);
 
   // checkbox の挙動：自身と子孫すべてを切り替える
@@ -253,14 +255,20 @@ function createTreeElement(node) {
     toggleBtn.textContent = opened ? '▸' : '▾'; // ▶ / ▼
   });
 
-  // クリックでラベルがチェックを切り替える（使いやすさ）
+  // ラベルクリックでチェック切替
   label.addEventListener('click', () => { input.checked = !input.checked; input.dispatchEvent(new Event('change')); });
 
-  // 子要素を再帰的に追加
+  // 子要素を再帰的に追加（深さ情報を渡す）
   if (hasChildren) {
     node.children.forEach(child => {
-      childContainer.appendChild(createTreeElement(child));
+      childContainer.appendChild(createTreeElement(child, depth + 1, expandDepth));
     });
+  }
+
+  // 重要：初期状態で node.visible が false の場合、チェックの状態と UI 表示を同期
+  if (typeof node.visible !== 'undefined' && node.visible === false) {
+    // 自分のチェックは既に false。子のチェックを false に同期（UI）
+    syncCheckboxes(childContainer, false);
   }
 
   return wrapper;
@@ -278,6 +286,8 @@ function setVisibilityRecursive(node, visible) {
 function syncCheckboxes(container, checked) {
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = checked);
 }
+
+
 
 // リサイズ処理
 window.addEventListener('resize', () => {
@@ -324,6 +334,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
