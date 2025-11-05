@@ -46,12 +46,15 @@ import { OrbitControls } from 'OrbitControls';
 import { GLTFLoader } from 'GLTFLoader';
 
 const GLB_PATH = 'mouthmove-demo2-18.glb'; // index.html と同じ階層ならこれで OK
+const GROUP_LABELS = ['1.a-あ','2.i-い','3.u-う','4.e-え','5.o-お','6.k1-으','7.k2-우','8.k3-어'];
+const SUBTREE_EXPAND_DEPTH = 2; // 展開深さ
 
+/* --- DOM --- */
 const container = document.getElementById('viewer');
 const controlsPane = document.getElementById('controls');
 const resetBtn = document.getElementById('resetBtn');
 
-// three.js セットアップ
+/* --- three.js 基本セットアップ --- */
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, (window.innerWidth - 300) / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 1.6, 3);
@@ -65,7 +68,7 @@ const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.target.set(0, 1, 0);
 orbit.update();
 
-// 簡易ライティング
+/* --- ライティング --- */
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
 hemi.position.set(0, 20, 0);
 scene.add(hemi);
@@ -73,10 +76,11 @@ const dir = new THREE.DirectionalLight(0xffffff, 0.8);
 dir.position.set(3, 10, 10);
 scene.add(dir);
 
+/* --- GLTF ロード --- */
 let modelRoot = null;
-
 const loader = new GLTFLoader();
 controlsPane.innerText = '読み込み中…';
+
 loader.load(GLB_PATH, (gltf) => {
   const model = gltf.scene || (gltf.scenes && gltf.scenes[0]);
   if (!model) {
@@ -87,7 +91,7 @@ loader.load(GLB_PATH, (gltf) => {
   modelRoot = model;
   scene.add(model);
 
-  // バウンディングボックスでカメラ調整
+  // カメラ自動調整
   const bbox = new THREE.Box3().setFromObject(model);
   const size = bbox.getSize(new THREE.Vector3()).length();
   const center = bbox.getCenter(new THREE.Vector3());
@@ -96,48 +100,39 @@ loader.load(GLB_PATH, (gltf) => {
   camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
   camera.updateProjectionMatrix();
 
-  // デバッグ出力（ノード一覧） — optional（読み込み成功の目安）
-  // controlsPane.innerHTML = '<strong>ロード成功 — ノード一覧（デバッグ）</strong><div id="nodeList" style="margin-top:8px;font-size:13px;"></div>';
-  // const nodeList = document.getElementById('nodeList');
-  // let count = 0;
-  // model.traverse((node) => {
-  //   const name = node.name && node.name.trim() ? node.name : '(no-name)';
-  //   const type = node.type || (node.isMesh ? 'Mesh' : 'Object3D');
-  //   const children = node.children ? node.children.length : 0;
-  //   const info = `${++count}. name: "${name}"  type: ${type}  children: ${children}`;
-  //   const el = document.createElement('div');
-  //   el.textContent = info;
-  //   nodeList.appendChild(el);
-  //   console.log(info, node);
-  // });
+  // UI を構築（指定ラベル群に基づく）
+  buildLabelGroupsUI(modelRoot, GROUP_LABELS, SUBTREE_EXPAND_DEPTH);
 
-  // ビューのツリー UI を構築（深さ 2 まで展開）
-  //buildTreeUI(model, 1);
-buildGroupedUI(model);
-  
 }, (xhr) => {
-  // onProgress: xhr は ProgressEvent で lengthComputable を使うことが多い
   try {
     if (xhr && xhr.lengthComputable) {
       controlsPane.innerText = `読み込み中… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
     } else {
-      controlsPane.innerText = `読み込み中…`;
+      controlsPane.innerText = '読み込み中…';
     }
   } catch (e) {
-    controlsPane.innerText = `読み込み中…`;
+    controlsPane.innerText = '読み込み中…';
   }
 }, (err) => {
   controlsPane.innerText = '読み込みに失敗しました（エラー）。Console を確認してください。';
   console.error('GLB load error:', err);
 });
 
-// ---- ツリー UI（深さ制限あり） ----
-// ---- グループ化された UI を作る ----
-// v<数字>. で始まるノード（例: "v1.a-あ"）をグループ扱いにして、
-// ラベルから先頭の「v」を取り除いた文字列（"1.a-あ"）を表示する。
-// 見つからない場合はフォールバックでルート直下をツリー表示します。
+/* ===========================================================
+   以下：UI とユーティリティ関数
+   - ノード名の正規化 (normalizeName)
+   - ラベルベースでグループ化して UI を作る (buildLabelGroupsUI)
+   - createSubTree / setVisibilityRecursive 等
+   =========================================================== */
 
-function buildGroupedUI(root) {
+/* ノード名を正規化：先頭の装飾記号や空白を取り除いて trim */
+function normalizeName(name) {
+  if (!name) return '';
+  return name.toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
+}
+
+/* 指定ラベル配列に基づいて UI を作る */
+function buildLabelGroupsUI(root, groups, maxSubDepth = 2) {
   controlsPane.innerHTML = '';
 
   if (!root) {
@@ -145,119 +140,142 @@ function buildGroupedUI(root) {
     return;
   }
 
-  // 1) vN.* パターンの親ノードを探す（直下にある場合を優先）
-  const grouped = [];
-  const pattern = /^v\d+\./; // v1. v2. など
+  // シーン全体を走査して、各ラベルにマッチするノード群を収集
+  const foundMap = {}; // label -> Set(nodes)
+  groups.forEach(g => foundMap[g] = new Set());
 
-  // 優先：root の直下にあるものから探す
-  if (root.children && root.children.length) {
-    root.children.forEach(child => {
-      if (child.name && pattern.test(child.name)) {
-        grouped.push(child);
-      } 
-    });
-  }
-
-  // 見つからなければシーン全体を走査して探す（深部にある場合）
-  if (!grouped.length) {
-    root.traverse(node => {
-      if (node !== root && node.name && pattern.test(node.name)) {
-        grouped.push(node);
+  root.traverse(node => {
+    const nname = normalizeName(node.name);
+    groups.forEach(label => {
+      if (!label) return;
+      // 完全一致（normalizeName(node.name) === label）または祖先一致
+      if (nname === label) {
+        foundMap[label].add(node);
+      } else {
+        // 祖先チェーンをチェック（normalizeName が label と一致する ancestor があれば採用）
+        let p = node.parent;
+        while (p) {
+          if (normalizeName(p.name) === label) {
+            foundMap[label].add(p); // 祖先そのものをグループ候補として追加（代表ノードは後で選ぶ）
+            break;
+          }
+          p = p.parent;
+        }
       }
     });
-  }
+  });
 
-  // UI に出す要素（見つかったグループがあればそれらを1つずつ表示）
+  // 各ラベルについて代表ノードを選ぶ（最も浅い＝ルート寄りのノードを選ぶ）
+  const groupRoots = {}; // label -> node or null
+  groups.forEach(label => {
+    const set = Array.from(foundMap[label]);
+    if (!set.length) {
+      groupRoots[label] = null;
+    } else {
+      set.sort((a,b) => depthFromRoot(a) - depthFromRoot(b));
+      groupRoots[label] = set[0];
+    }
+  });
+
+  // UI ビルド
   const fragment = document.createDocumentFragment();
 
-  if (grouped.length) {
-    grouped.forEach((groupNode, idx) => {
-      // 表示名：先頭の 'v' を除く（例: v1.a-あ -> 1.a-あ）
-      const rawName = groupNode.name || `group_${idx}`;
-      const labelName = rawName.startsWith('v') ? rawName.slice(1) : rawName;
+  groups.forEach((label, idx) => {
+    const rootNode = groupRoots[label];
+    const displayLabel = label;
 
-      // 行を作る（checkbox + label + optional expand）
-      const row = document.createElement('div');
-      row.className = 'collection-item';
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
+    const row = document.createElement('div');
+    row.className = 'collection-item';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
 
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = (typeof groupNode.visible !== 'undefined') ? groupNode.visible : true;
-      checkbox.id = `group_${idx}`;
-      checkbox.style.marginRight = '8px';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `lbl_group_${idx}`;
+    checkbox.style.marginRight = '8px';
 
-      const label = document.createElement('label');
-      label.htmlFor = checkbox.id;
-      label.textContent = labelName;
+    if (rootNode) {
+      checkbox.checked = (typeof rootNode.visible !== 'undefined') ? rootNode.visible : true;
+    } else {
+      checkbox.checked = true;
+      checkbox.disabled = true;
+    }
 
-      row.appendChild(checkbox);
-      row.appendChild(label);
+    const labelEl = document.createElement('label');
+    labelEl.htmlFor = checkbox.id;
+    labelEl.textContent = displayLabel;
+    labelEl.style.cursor = rootNode ? 'pointer' : 'default';
 
-      // クリック時は groupNode とその子孫すべてを切り替え
-      checkbox.addEventListener('change', () => {
-        const v = checkbox.checked;
-        setVisibilityRecursive(groupNode, v);
-      });
+    const expandBtn = document.createElement('button');
+    expandBtn.textContent = '表示▼';
+    expandBtn.style.marginLeft = '12px';
+    expandBtn.style.fontSize = '12px';
+    expandBtn.style.padding = '3px 6px';
+    expandBtn.style.cursor = rootNode ? 'pointer' : 'default';
 
-      // （任意）ラベルクリックでトグル
-      label.addEventListener('click', () => {
-        checkbox.checked = !checkbox.checked;
-        checkbox.dispatchEvent(new Event('change'));
-      });
+    const subContainer = document.createElement('div');
+    subContainer.style.marginLeft = '18px';
+    subContainer.style.display = 'none';
 
-      // さらに「展開ボタン」を付けて、中身のツリーを表示する（クリックで展開）
-      const expandBtn = document.createElement('button');
-      expandBtn.textContent = '表示▼';
-      expandBtn.style.marginLeft = '12px';
-      expandBtn.style.fontSize = '12px';
-      expandBtn.style.padding = '3px 6px';
-      expandBtn.style.cursor = 'pointer';
+    row.appendChild(checkbox);
+    row.appendChild(labelEl);
+    row.appendChild(expandBtn);
+    fragment.appendChild(row);
+    fragment.appendChild(subContainer);
 
-      // 子ツリー領域（最初は非表示）
-      const subContainer = document.createElement('div');
-      subContainer.style.marginLeft = '18px';
-      subContainer.style.display = 'none';
-
-      expandBtn.addEventListener('click', () => {
-        const opened = subContainer.style.display !== 'none';
-        subContainer.style.display = opened ? 'none' : 'block';
-        expandBtn.textContent = opened ? '表示▼' : '非表示▲';
-      });
-
-      row.appendChild(expandBtn);
-      fragment.appendChild(row);
-
-      // サブツリーを作る（深さ 2 までの簡易ツリー表示。チェックは親と独立）
-      // createSubTree は以下で定義
-      subContainer.appendChild(createSubTree(groupNode, 0, 2));
-      fragment.appendChild(subContainer);
+    // checkbox 動作
+    checkbox.addEventListener('change', () => {
+      if (!rootNode) return;
+      const v = checkbox.checked;
+      setVisibilityRecursive(rootNode, v);
+      subContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = v);
     });
 
-  } else {
-    // 見つからない場合はフォールバックで普通のツリー（深さ2）を出す
-    // （既存の buildTreeUI を呼ぶ代わりにここから作る）
-    if (root.children && root.children.length) {
-      root.children.forEach(child => {
-        fragment.appendChild(createSubTree(child, 0, 2));
-      });
+    // ラベルクリックでトグル
+    labelEl.addEventListener('click', () => {
+      if (!rootNode) return;
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change'));
+    });
+
+    // expand 動作
+    expandBtn.addEventListener('click', () => {
+      if (!rootNode) return;
+      const opened = subContainer.style.display !== 'none';
+      subContainer.style.display = opened ? 'none' : 'block';
+      expandBtn.textContent = opened ? '表示▼' : '非表示▲';
+    });
+
+    // サブツリー（根が rootNode）
+    if (rootNode) {
+      subContainer.appendChild(createSubTree(rootNode, 0, maxSubDepth));
     } else {
-      fragment.appendChild(createSubTree(root, 0, 2));
+      const hint = document.createElement('div');
+      hint.textContent = '（該当ノードが見つかりません）';
+      hint.style.fontSize = '12px';
+      hint.style.color = '#777';
+      subContainer.appendChild(hint);
     }
-  }
+  });
 
   controlsPane.appendChild(fragment);
 
   // reset ボタン
   resetBtn.onclick = () => {
     root.traverse(n => { if (typeof n.visible !== 'undefined') n.visible = true; });
-    document.querySelectorAll('#controls input[type="checkbox"]').forEach(cb => cb.checked = true);
+    document.querySelectorAll('#controls input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; });
   };
+
+  // 補助：深さ計算
+  function depthFromRoot(node) {
+    let d = 0;
+    let p = node;
+    while (p && p.parent) { d++; p = p.parent; }
+    return d;
+  }
 }
 
-// createSubTree: node の subtree を作る（深さ制限あり）
-// - このサブツリー上のチェックは、そのノードとその子孫のみを切る（親グループの on/off とは併存します）
+/* createSubTree: node の subtree を作る（深さ制限あり） */
 function createSubTree(node, depth, maxDepth) {
   const wrapper = document.createElement('div');
   wrapper.style.display = 'flex';
@@ -278,7 +296,7 @@ function createSubTree(node, depth, maxDepth) {
   toggleBtn.style.cursor = hasChildren ? 'pointer' : 'default';
   toggleBtn.style.width = '18px';
   toggleBtn.style.padding = '0';
-  toggleBtn.textContent = hasChildren ? '▸' : ''; // ▶
+  toggleBtn.textContent = hasChildren ? '▸' : '';
   row.appendChild(toggleBtn);
 
   const input = document.createElement('input');
@@ -300,7 +318,6 @@ function createSubTree(node, depth, maxDepth) {
   input.addEventListener('change', () => {
     const checked = input.checked;
     setVisibilityRecursive(node, checked);
-    // sync child checkboxes in this subContainer
     childContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = checked);
   });
 
@@ -322,7 +339,7 @@ function createSubTree(node, depth, maxDepth) {
   return wrapper;
 }
 
-// setVisibilityRecursive: node とその子孫の visible を set
+/* setVisibilityRecursive: node とその子孫すべての visible を設定 */
 function setVisibilityRecursive(node, visible) {
   if (typeof node.visible !== 'undefined') node.visible = visible;
   if (node.children && node.children.length) {
@@ -330,10 +347,7 @@ function setVisibilityRecursive(node, visible) {
   }
 }
 
-
-
-   
-// リサイズ処理（viewer の幅はサイドバー 300px を差し引く）
+/* リサイズ対応（viewer の幅はサイドバー 300px を差し引く） */
 window.addEventListener('resize', () => {
   const w = window.innerWidth - 300;
   const h = window.innerHeight;
@@ -342,7 +356,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(w, h);
 });
 
-// レンダーループ
+/* レンダーループ */
 function animate() {
   requestAnimationFrame(animate);
   renderer.render(scene, camera);
@@ -380,6 +394,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
