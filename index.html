@@ -127,16 +127,49 @@ loader.load(GLB_PATH, (gltf) => {
 });
 
 // findCollections: 子を持つノードを「コレクション」として収集（簡易）
+// --- 置き換え用：より柔軟なコレクション検出 ---
 function findCollections(root) {
   const list = [];
+
+  // 1) ルート直下の子をコレクションとみなす（名前が空なら自動付与）
+  if (root.children && root.children.length > 0) {
+    // ただし直下が1つだけで、その子が複数持つ場合は展開する
+    if (root.children.length === 1 && root.children[0].children.length > 1) {
+      root.children[0].children.forEach((child, idx) => {
+        const name = child.name && child.name.trim() ? child.name : `Collection_${list.length}`;
+        list.push({ node: child, name });
+      });
+      if (list.length) return list;
+    }
+
+    // 通常は直下の子をそのまま列挙
+    root.children.forEach((child, idx) => {
+      const name = child.name && child.name.trim() ? child.name : `Collection_${list.length}`;
+      list.push({ node: child, name });
+    });
+    if (list.length) return list;
+  }
+
+  // 2) 直下が無い（または上で拾えなかった）なら、子を持つノードを列挙
   root.traverse((node) => {
     if (node !== root && node.children && node.children.length > 0) {
       const name = node.name && node.name.trim() ? node.name : `Collection_${list.length}`;
       list.push({ node, name });
     }
   });
+  if (list.length) return list;
+
+  // 3) それでも空なら、全ての Mesh を個別コレクションとして追加（最低限の保険）
+  root.traverse((node) => {
+    if (node.isMesh) {
+      const name = node.name && node.name.trim() ? node.name : `Mesh_${list.length}`;
+      list.push({ node, name });
+    }
+  });
+
   return list;
 }
+
 
 function buildUI(collections) {
   controlsPane.innerHTML = '';
@@ -220,6 +253,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
