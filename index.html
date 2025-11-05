@@ -112,7 +112,7 @@ loader.load(GLB_PATH, (gltf) => {
   // });
 
   // ビューのツリー UI を構築（深さ 2 まで展開）
-  buildTreeUI(model, 2);
+  buildTreeUI(model, 1);
 
 }, (xhr) => {
   // onProgress: xhr は ProgressEvent で lengthComputable を使うことが多い
@@ -300,6 +300,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
