@@ -170,42 +170,113 @@ function findCollections(root) {
   return list;
 }
 
+// ---- ツリーUI を構築する関数 ----
+function buildTreeUI(root) {
+  controlsPane.innerHTML = ''; // クリア
+  const treeRoot = createTreeElement(root);
+  // ルート自体は表示しないでその直下を一覧化（見た目上わかりやすく）
+  const fragment = document.createDocumentFragment();
+  root.children.forEach(child => {
+    fragment.appendChild(createTreeElement(child));
+  });
+  controlsPane.appendChild(fragment);
 
-function buildUI(collections) {
-  controlsPane.innerHTML = '';
-  if (!collections.length) {
-    controlsPane.innerText = 'コレクションが見つかりませんでした。ノード名を確認してください。';
-    return;
-  }
+  // reset ボタン（全てを表示）
+  resetBtn.onclick = () => {
+    root.traverse(n => { if (n.visible !== undefined) n.visible = true; });
+    // チェックボックスも全部チェックする
+    document.querySelectorAll('#controls input[type="checkbox"]').forEach(cb => cb.checked = true);
+  };
+}
 
-  collections.forEach((c, i) => {
-    const div = document.createElement('div');
-    div.className = 'collection-item';
+// 再帰でツリー要素を作る
+function createTreeElement(node) {
+  const wrapper = document.createElement('div');
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+  wrapper.style.marginLeft = '6px';
 
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = true;
-    input.id = `col_${i}`;
-    input.onchange = () => {
-      c.node.visible = input.checked;
-    };
+  // 行（折りたたみボタン + checkbox + label）
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.alignItems = 'center';
+  row.style.gap = '8px';
+  row.style.margin = '4px 0';
 
-    const label = document.createElement('label');
-    label.htmlFor = input.id;
-    label.innerText = c.name;
+  // 折りたたみボタン（子がなければ透明のスペース）
+  const hasChildren = node.children && node.children.length > 0;
+  const toggleBtn = document.createElement('button');
+  toggleBtn.style.border = 'none';
+  toggleBtn.style.background = 'transparent';
+  toggleBtn.style.cursor = hasChildren ? 'pointer' : 'default';
+  toggleBtn.style.width = '18px';
+  toggleBtn.style.padding = '0';
+  toggleBtn.textContent = hasChildren ? '▸' : ''; // ▶
+  toggleBtn.title = hasChildren ? '展開/折りたたみ' : '';
+  row.appendChild(toggleBtn);
 
-    div.appendChild(input);
-    div.appendChild(label);
-    controlsPane.appendChild(div);
+  // checkbox
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = (node.visible !== undefined) ? node.visible : true;
+  row.appendChild(input);
+
+  // label
+  const label = document.createElement('label');
+  const name = node.name && node.name.trim() ? node.name : '(no-name)';
+  label.textContent = name;
+  label.style.userSelect = 'none';
+  row.appendChild(label);
+
+  // 行を wrapper に追加
+  wrapper.appendChild(row);
+
+  // 子ノード用コンテナ（初期は折りたたみ）
+  const childContainer = document.createElement('div');
+  childContainer.style.marginLeft = '18px';
+  childContainer.style.display = 'none'; // 折りたたみ状態
+  wrapper.appendChild(childContainer);
+
+  // checkbox の挙動：自身と子孫すべてを切り替える
+  input.addEventListener('change', () => {
+    const checked = input.checked;
+    setVisibilityRecursive(node, checked);
+    // 子のチェックボックスも同期（UI 側）
+    syncCheckboxes(childContainer, checked);
   });
 
-  resetBtn.onclick = () => {
-    collections.forEach((c, idx) => {
-      c.node.visible = true;
-      const el = document.getElementById(`col_${idx}`);
-      if (el) el.checked = true;
+  // 折りたたみボタンの挙動
+  toggleBtn.addEventListener('click', () => {
+    if (!hasChildren) return;
+    const opened = childContainer.style.display !== 'none';
+    childContainer.style.display = opened ? 'none' : 'block';
+    toggleBtn.textContent = opened ? '▸' : '▾'; // ▶ / ▼
+  });
+
+  // クリックでラベルがチェックを切り替える（使いやすさ）
+  label.addEventListener('click', () => { input.checked = !input.checked; input.dispatchEvent(new Event('change')); });
+
+  // 子要素を再帰的に追加
+  if (hasChildren) {
+    node.children.forEach(child => {
+      childContainer.appendChild(createTreeElement(child));
     });
-  };
+  }
+
+  return wrapper;
+}
+
+// node とその全子孫の visibility を設定
+function setVisibilityRecursive(node, visible) {
+  if (typeof node.visible !== 'undefined') node.visible = visible;
+  if (node.children && node.children.length) {
+    node.children.forEach(child => setVisibilityRecursive(child, visible));
+  }
+}
+
+// childContainer 内の checkbox をチェック/未チェックにする（UI 同期）
+function syncCheckboxes(container, checked) {
+  container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = checked);
 }
 
 // リサイズ処理
@@ -253,6 +324,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
