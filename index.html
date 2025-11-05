@@ -35,7 +35,7 @@
   <script>
     // --- 設定 ---
     // GLB はリポジトリの models フォルダに入れておく想定
-    const GLB_PATH = 'mouthmove-demo2-18.glb';
+    const GLB_PATH = './models/mouthmove-demo2-18.glb';
 
     const container = document.getElementById('viewer');
     const controlsPane = document.getElementById('controls');
@@ -102,32 +102,14 @@
     function findCollections(root) {
       const list = [];
       root.traverse((node) => {
-        // Group（グループ）や、メッシュを直接まとめたノードをコレクションとみなす。
-        // 名前が空ならスキップしないで名前を付ける。
-        if ((node.type === 'Group' || node.type === 'Object3D' || node.isMesh) && node.parent && node !== root) {
-          // 親ごとにまとめる — 直下の子をコレクション候補にする
-          // ここでは root の直下と、その下のグループを主に扱う
+        if (node !== root && node.children && node.children.length > 0) {
+          const name = node.name && node.name.trim() ? node.name : `Collection_${list.length}`;
+          list.push({ node, name });
         }
       });
-
-      // より直感的な扱いのため、root の直下の子をコレクションとして扱う。
-      root.children.forEach((child, idx) => {
-        const name = child.name && child.name.trim() ? child.name : `Collection_${idx}`;
-        list.push({ node: child, name });
-      });
-
-      // もし直下が 1 つだけで、その子がさらに複数のグループを持つ場合、それらを展開して一覧化する
-      if (list.length === 1 && list[0].node.children.length > 1) {
-        const expanded = [];
-        list[0].node.children.forEach((child, idx) => {
-          const name = child.name && child.name.trim() ? child.name : `Collection_${idx}`;
-          expanded.push({ node: child, name });
-        });
-        if (expanded.length) list.splice(0, 1, ...expanded);
-      }
-
       return list;
     }
+
 
     function buildUI(collections) {
       controlsPane.innerHTML = '';
@@ -210,5 +192,3 @@
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
-
-
