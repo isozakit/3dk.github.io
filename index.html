@@ -47,11 +47,11 @@ import { GLTFLoader } from 'GLTFLoader';
 /* --- config: mapping of labels -> node names in GLB --- */
 const GLB_PATH = 'mouthmove-demo2-18.glb';
 const mapping = {
-  '1.a-あ': ['line-ja','line-ja-moji-a','line-ja-moji-a.002','moji_ea'],
-  '2.i-い': ['line-ji','line-ji-moji-i','line-ji-moji-i.001','mojii_ei'],
+  '1.a-あ': ['line-ja','line-ja-moji-a','line-ja-moji-a002','moji_ea'],
+  '2.i-い': ['line-ji','line-ji-moji-i','line-ji-moji-i001','mojii_ei'],
   '3.u-う': ['line-ju','line-ju-moji-u','moji_eu'],
-  '4.e-え': ['line-je','line-je-moji-e','line-je-moji-e.001','moji_ee'],
-  '5.o-お': ['line-jo','line-jo-moji-o','line-jo-moji-o.001','moji_eo'],
+  '4.e-え': ['line-je','line-je-moji-e','line-je-moji-e001','moji_ee'],
+  '5.o-お': ['line-jo','line-jo-moji-o','line-jo-moji-o001','moji_eo'],
   '6.k1-으': ['line-keo','line-keo-moji-keo'],
   '7.k2-우': ['line-ku','line-ku-moji-ku'],
   '8.k3-어': ['line-kwu','line-kwu-moji-kwu']
@@ -349,6 +349,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
