@@ -39,13 +39,13 @@
   </div>
   
   <script type="module">
-/* モジュール版 three + examples/jsm を importmap 経由で読み込み */
+/* imports via importmap in <head> */
 import * as THREE from 'three';
 import { OrbitControls } from 'OrbitControls';
 import { GLTFLoader } from 'GLTFLoader';
 
-/* --- 設定 --- */
-const GLB_PATH = 'mouthmove-demo2-18.glb'; // index.html と同階層に置く想定
+/* --- config: mapping of labels -> node names in GLB --- */
+const GLB_PATH = 'mouthmove-demo2-18.glb';
 const mapping = {
   '1.a-あ': ['line-ja','line-ja-moji-a','line-ja-moji-a.002','moji_ea'],
   '2.i-い': ['line-ji','line-ji-moji-i','line-ji-moji-i.001','mojii_ei'],
@@ -56,18 +56,25 @@ const mapping = {
   '7.k2-우': ['line-ku','line-ku-moji-ku'],
   '8.k3-어': ['line-kwu','line-kwu-moji-kwu']
 };
+
+/* subtree expand depth is irrelevant now (no subtrees shown) */
 const SUBTREE_EXPAND_DEPTH = 2;
 
-/* --- DOM --- */
+/* DOM refs */
 const container = document.getElementById('viewer');
 const controlsPane = document.getElementById('controls');
 const resetBtn = document.getElementById('resetBtn');
+const hintEl = document.querySelector('.hint');
+const headerEl = document.querySelector('header');
 
-/* --- three.js 初期化 --- */
+/* Set English header/hint */
+if (headerEl) headerEl.innerText = 'Collection Visibility';
+if (hintEl) hintEl.innerText = 'Toggle each group to show/hide its child objects.';
+
+/* three setup */
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, (window.innerWidth - 300) / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 1.6, 3);
-
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth - 300, window.innerHeight);
@@ -84,27 +91,27 @@ const dir = new THREE.DirectionalLight(0xffffff, 0.8);
 dir.position.set(3, 10, 10);
 scene.add(dir);
 
-/* --- GLTF ローダー --- */
+/* loader */
 let modelRoot = null;
 const loader = new GLTFLoader();
-controlsPane.innerText = '読み込み中…';
+controlsPane.innerText = 'Loading…';
 
 loader.load(GLB_PATH, (gltf) => {
   const model = gltf.scene || (gltf.scenes && gltf.scenes[0]);
   if (!model) {
-    controlsPane.innerText = 'モデルが空です（gltf.scene が null）。Console を確認してください。';
+    controlsPane.innerText = 'Model empty (gltf.scene is null). Check console.';
     console.error('gltf.scene is null', gltf);
     return;
   }
 
-  // デバッグや console 用にグローバル参照を残す
+  // expose for debugging
   window.modelRoot = model;
   window.appScene = scene;
 
   modelRoot = model;
   scene.add(model);
 
-  // カメラ自動調整
+  // camera fit
   const bbox = new THREE.Box3().setFromObject(model);
   const size = bbox.getSize(new THREE.Vector3()).length();
   const center = bbox.getCenter(new THREE.Vector3());
@@ -113,233 +120,190 @@ loader.load(GLB_PATH, (gltf) => {
   camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
   camera.updateProjectionMatrix();
 
-  // UI を構築（mapping ベース）
-  buildGroupsFromMapping(modelRoot, mapping, SUBTREE_EXPAND_DEPTH);
+  // build the simple grouped UI (only top-level group checkboxes + Display All)
+  buildSimpleGroupUI(modelRoot, mapping);
 
 }, (xhr) => {
   try {
     if (xhr && xhr.lengthComputable) {
-      controlsPane.innerText = `読み込み中… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
+      controlsPane.innerText = `Loading… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
     } else {
-      controlsPane.innerText = '読み込み中…';
+      controlsPane.innerText = 'Loading…';
     }
   } catch (e) {
-    controlsPane.innerText = '読み込み中…';
+    controlsPane.innerText = 'Loading…';
   }
 }, (err) => {
-  controlsPane.innerText = '読み込みに失敗しました（エラー）。Console を確認してください。';
+  controlsPane.innerText = 'Failed to load model. Check console.';
   console.error('GLB load error:', err);
 });
 
-/* ============================================================
-   以下：UI とユーティリティ（mapping を使ってグループ UI を作る）
-   ============================================================ */
-// 名前解決ヘルパー：exact -> includes -> regex-ish（ドット表記違い等）で柔軟に拾う
-function resolveNodeByName(root, name) {
-  if (!name) return null;
-  // 1) 完全一致
+/* -------------------------
+   Helper: flexible name resolver
+   tries: exact, normalized exact, includes, normalized includes
+   normalized trims leading decoration chars like > ｜ v etc.
+   ------------------------- */
+function normalizeNameForMatch(name) {
+  if (!name) return '';
+  return name.toString().replace(/^[\s\>\<＞｜\|\u2502vV]+/, '').trim();
+}
+
+function resolveNodeByNameFlexible(root, targetName) {
+  if (!root || !targetName) return null;
   let found = null;
+
+  // 1) exact
   root.traverse(n => {
     if (found) return;
-    if (n.name === name) found = n;
+    if (n.name === targetName) found = n;
   });
   if (found) return found;
 
-  // 2) 正規化して完全一致（先頭の装飾削除）
-  const normTarget = (name || '').toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
+  // 2) normalized exact
+  const normTarget = normalizeNameForMatch(targetName);
   root.traverse(n => {
     if (found) return;
-    const norm = (n.name || '').toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
-    if (norm === normTarget) found = n;
+    if (normalizeNameForMatch(n.name) === normTarget) found = n;
   });
   if (found) return found;
 
-  // 3) 部分一致（包含）
+  // 3) includes (raw)
   root.traverse(n => {
     if (found) return;
     const nm = n.name || '';
-    if (nm.includes(name)) found = n;
+    if (nm && nm.includes(targetName)) found = n;
   });
   if (found) return found;
 
-  // 4) 部分一致 on normalized name
+  // 4) normalized includes
   root.traverse(n => {
     if (found) return;
-    const norm = (n.name || '').toString().replace(/^[\s\>\<＞｜\|vV]+/, '').trim();
-    if (norm.includes(normTarget)) found = n;
+    const nm = normalizeNameForMatch(n.name);
+    if (nm && nm.includes(normTarget)) found = n;
   });
+
   return found;
 }
 
-// setVisibilityRecursive: visible プロパティを必ず設定する（undefined チェック削除）
+/* -------------------------
+   visibility setter that forces visible flag (safe)
+   ------------------------- */
 function setVisibilityRecursive(node, visible) {
   if (!node) return;
-  // 必ず設定する（Object3D に visible は存在するはず）
-  try {
-    node.visible = visible;
-  } catch (e) {
-    // 万が一設定できないノードがあれば無視
-    console.warn('cannot set visible on node', node, e);
-  }
+  try { node.visible = visible; } catch (e) { console.warn('cannot set visible', node, e); }
   if (node.children && node.children.length) {
     node.children.forEach(c => setVisibilityRecursive(c, visible));
   }
 }
 
-// buildGroupsFromMapping の改良版：展開ボタンを外し、部分一致で足りないノードを補正
-function buildGroupsFromMapping(root, mapping, maxSubDepth = 2) {
-  controlsPane.innerHTML = '';
-  if (!root) { controlsPane.innerText = 'モデル未ロード'; return; }
+/* -------------------------
+   buildSimpleGroupUI
+   - shows only group checkbox lines (labels from mapping keys)
+   - last control is Display All button
+   ------------------------- */
+function buildSimpleGroupUI(root, mappingObj) {
+  controlsPane.innerHTML = ''; // clear
 
-  // 名前 -> node マップ（参考用）
+  // build a name->node map for quick lookup
   const nameToNode = {};
   root.traverse(n => { if (n.name) nameToNode[n.name] = n; });
 
   const fragment = document.createDocumentFragment();
-  let idx = 0;
+  const labels = Object.keys(mappingObj);
 
-  for (const [label, nameList] of Object.entries(mapping)) {
-    // resolve each mapped name to an actual node (flexible)
-    const groupNodes = [];
+  // store resolved group nodes per label
+  const groupMap = {}; // label -> array of nodes
+
+  labels.forEach((label, idx) => {
+    const wantedNames = mappingObj[label] || [];
+    const resolved = [];
     const unresolved = [];
-    nameList.forEach(nm => {
-      const node = nameToNode[nm] || resolveNodeByName(root, nm);
-      if (node) groupNodes.push(node);
+    wantedNames.forEach(nm => {
+      const node = nameToNode[nm] || resolveNodeByNameFlexible(root, nm);
+      if (node) resolved.push(node);
       else unresolved.push(nm);
     });
+    groupMap[label] = resolved;
 
-    // ログ出力（デバッグ用）: 解決できなかった名前を console に出す
-    if (unresolved.length) {
-      console.warn(`mapping: label "${label}" - unresolved nodes:`, unresolved);
-    }
-
+    // UI row
     const row = document.createElement('div');
     row.className = 'collection-item';
     row.style.display = 'flex';
     row.style.alignItems = 'center';
+    row.style.margin = '6px 0';
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.id = `map_grp_${idx}`;
+    checkbox.id = `grp_${idx}`;
     checkbox.style.marginRight = '8px';
-    // 初期チェック状態は groupNodes の最初の node の visible を参照（なければ true）
-    checkbox.checked = groupNodes.length ? (typeof groupNodes[0].visible !== 'undefined' ? groupNodes[0].visible : true) : true;
-    if (!groupNodes.length) checkbox.disabled = true;
+
+    // initial checked: if any resolved node exists, use its visible; otherwise true and disabled
+    if (resolved.length) {
+      checkbox.checked = resolved[0].visible !== undefined ? resolved[0].visible : true;
+    } else {
+      checkbox.checked = true;
+      checkbox.disabled = true;
+      row.style.opacity = '0.6';
+    }
 
     const labelEl = document.createElement('label');
     labelEl.htmlFor = checkbox.id;
     labelEl.textContent = label;
-    labelEl.style.cursor = groupNodes.length ? 'pointer' : 'default';
+    labelEl.style.userSelect = 'none';
+    labelEl.style.cursor = resolved.length ? 'pointer' : 'default';
 
     row.appendChild(checkbox);
     row.appendChild(labelEl);
     fragment.appendChild(row);
 
-    // サブコンテナ：展開ボタンを廃止したいとのことなので、最初からサブツリーを表示しておく
-    const subContainer = document.createElement('div');
-    subContainer.style.marginLeft = '18px';
-    subContainer.style.display = 'block'; // 常に展開（深さ maxSubDepth まで createSubTree が制御）
-    fragment.appendChild(subContainer);
+    // console warning if unresolved
+    if (unresolved.length) {
+      console.warn(`Group "${label}" unresolved items:`, unresolved);
+    }
 
-    // checkbox の挙動
+    // checkbox action: toggle all resolved nodes (and their descendants)
     checkbox.addEventListener('change', () => {
       const v = checkbox.checked;
-      groupNodes.forEach(n => setVisibilityRecursive(n, v));
-      // UI 側のサブチェックも同期
-      subContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = v);
+      resolved.forEach(n => setVisibilityRecursive(n, v));
     });
 
-    // ラベルクリックでトグル
+    // clicking label toggles checkbox
     labelEl.addEventListener('click', () => {
       if (checkbox.disabled) return;
       checkbox.checked = !checkbox.checked;
       checkbox.dispatchEvent(new Event('change'));
     });
+  });
 
-    // 各ノードの subtree を追加
-    groupNodes.forEach(n => {
-      subContainer.appendChild(createSubTree(n, 0, maxSubDepth));
-    });
+  // Display All row (button)
+  const displayAllRow = document.createElement('div');
+  displayAllRow.style.marginTop = '10px';
+  displayAllRow.style.display = 'flex';
+  displayAllRow.style.gap = '8px';
+  displayAllRow.style.alignItems = 'center';
 
-    idx += 1;
-  }
+  const displayAllBtn = document.createElement('button');
+  displayAllBtn.textContent = 'Display All';
+  displayAllBtn.style.padding = '6px 10px';
+  displayAllBtn.style.borderRadius = '6px';
+  displayAllBtn.style.cursor = 'pointer';
+
+  displayAllBtn.addEventListener('click', () => {
+    root.traverse(n => { try { n.visible = true; } catch (e) {} });
+    // re-enable and check all checkboxes
+    controlsPane.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; cb.parentElement.style.opacity = '1'; });
+  });
+
+  displayAllRow.appendChild(displayAllBtn);
+  fragment.appendChild(displayAllRow);
 
   controlsPane.appendChild(fragment);
 
-  // 全表示ボタン
-  resetBtn.onclick = () => {
-    root.traverse(n => { try { n.visible = true; } catch(e){} });
-    document.querySelectorAll('#controls input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; });
-  };
+  // expose groupMap for debugging
+  window._groupMap = groupMap;
 }
 
-
-/* createSubTree / setVisibilityRecursive （ツリー表示と ON/OFF 処理） */
-function createSubTree(node, depth, maxDepth) {
-  const wrapper = document.createElement('div');
-  wrapper.style.display = 'flex';
-  wrapper.style.flexDirection = 'column';
-  wrapper.style.marginLeft = '6px';
-
-  const row = document.createElement('div');
-  row.style.display = 'flex';
-  row.style.alignItems = 'center';
-  row.style.gap = '8px';
-  row.style.margin = '4px 0';
-
-  const hasChildren = node.children && node.children.length > 0;
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.style.border = 'none';
-  toggleBtn.style.background = 'transparent';
-  toggleBtn.style.cursor = hasChildren ? 'pointer' : 'default';
-  toggleBtn.style.width = '18px';
-  toggleBtn.style.padding = '0';
-  toggleBtn.textContent = hasChildren ? '▸' : '';
-  row.appendChild(toggleBtn);
-
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.checked = (typeof node.visible !== 'undefined') ? node.visible : true;
-  row.appendChild(input);
-
-  const label = document.createElement('label');
-  label.textContent = node.name && node.name.trim() ? node.name : '(no-name)';
-  row.appendChild(label);
-
-  wrapper.appendChild(row);
-
-  const childContainer = document.createElement('div');
-  childContainer.style.marginLeft = '18px';
-  childContainer.style.display = (hasChildren && depth < maxDepth) ? 'block' : 'none';
-  wrapper.appendChild(childContainer);
-
-  input.addEventListener('change', () => {
-    const checked = input.checked;
-    setVisibilityRecursive(node, checked);
-    childContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = checked);
-  });
-
-  toggleBtn.addEventListener('click', () => {
-    if (!hasChildren) return;
-    const opened = childContainer.style.display !== 'none';
-    childContainer.style.display = opened ? 'none' : 'block';
-    toggleBtn.textContent = opened ? '▸' : '▾';
-  });
-
-  label.addEventListener('click', () => { input.checked = !input.checked; input.dispatchEvent(new Event('change')); });
-
-  if (hasChildren) {
-    node.children.forEach(child => {
-      childContainer.appendChild(createSubTree(child, depth + 1, maxDepth));
-    });
-  }
-
-  return wrapper;
-}
-
-
-/* リサイズ & レンダーループ */
+/* resize & render */
 window.addEventListener('resize', () => {
   const w = window.innerWidth - 300;
   const h = window.innerHeight;
@@ -355,7 +319,6 @@ function animate() {
 animate();
 </script>
 
- 
 
    
 </body>
@@ -386,6 +349,7 @@ animate();
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
 
 
 
