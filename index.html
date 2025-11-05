@@ -32,138 +32,41 @@
   <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
   <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
 
-  <script>
-    // --- 設定 ---
-    // GLB はリポジトリの models フォルダに入れておく想定
-    const GLB_PATH = './models/mouthmove-demo2-18.glb';
+ <!-- 置き換え前の <script src="...three.min.js"> ... </script> を削除して以下を追加 -->
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+  import { GLTFLoader } from 'https://unpkg.com/three@0.152.2/examples/jsm/loaders/GLTFLoader.js';
 
-    const container = document.getElementById('viewer');
-    const controlsPane = document.getElementById('controls');
-    const resetBtn = document.getElementById('resetBtn');
+  // ここから既存コード（ほぼそのまま）を入れてOK。ただし OrbitControls の生成が変わります:
+  const container = document.getElementById('viewer');
+  const controlsPane = document.getElementById('controls');
+  const resetBtn = document.getElementById('resetBtn');
 
-    // three.js セットアップ
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 1.6, 3);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, (window.innerWidth - 300) / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 1.6, 3);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth - 300, window.innerHeight);
-    container.appendChild(renderer.domElement);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth - 300, window.innerHeight);
+  container.appendChild(renderer.domElement);
 
-    const orbit = new THREE.OrbitControls(camera, renderer.domElement);
-    orbit.target.set(0, 1, 0);
-    orbit.update();
+  // ← ここが重要：new THREE.OrbitControls ではなく、モジュールから直接使う
+  const orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.target.set(0, 1, 0);
+  orbit.update();
 
-    // 簡易ライティング
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
-    hemi.position.set(0, 20, 0);
-    scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(3, 10, 10);
-    scene.add(dir);
+  // GLTFLoader の使い方はほぼ同じ
+  const loader = new GLTFLoader();
+  const GLB_PATH = 'mouthmove-demo2-18.glb';
 
-    // グリッド/軸（任意）
-    const grid = new THREE.GridHelper(10, 10);
-    //scene.add(grid);
+  // （以降はあなたの既存スクリプトをそのまま流用できます）
+  // 例: loader.load(GLB_PATH, (gltf) => { ... }, (xhr)=>{...}, (err)=>{...});
+  // 注意: 既存コード内で THREE.OrbitControls を参照している箇所があれば
+  //    OrbitControls に置換してください（上の new OrbitControls(...) のように）。
+</script>
 
-    // リビングリスト（表示切替に使う）
-    let collectionNodes = [];
-
-    // GLTF ローダー
-    const loader = new THREE.GLTFLoader();
-    loader.load(GLB_PATH, (gltf) => {
-      const model = gltf.scene || gltf.scenes[0];
-      scene.add(model);
-
-      // カメラ用にバウンディングボックスを計算してズーム調整
-      const bbox = new THREE.Box3().setFromObject(model);
-      const size = bbox.getSize(new THREE.Vector3()).length();
-      const center = bbox.getCenter(new THREE.Vector3());
-      orbit.target.copy(center);
-      orbit.update();
-
-      camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
-      camera.updateProjectionMatrix();
-
-      // コレクション（＝モデル内のノード）を収集して UI を作る
-      collectionNodes = findCollections(model);
-      buildUI(collectionNodes);
-
-    }, (xhr) => {
-      // プログレス表示
-      controlsPane.innerText = `読み込み中… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
-    }, (err) => {
-      controlsPane.innerText = '読み込みに失敗しました。コンソールを確認してください。';
-      console.error(err);
-    });
-
-    // ノードからコレクション候補を探す
-    function findCollections(root) {
-      const list = [];
-      root.traverse((node) => {
-        if (node !== root && node.children && node.children.length > 0) {
-          const name = node.name && node.name.trim() ? node.name : `Collection_${list.length}`;
-          list.push({ node, name });
-        }
-      });
-      return list;
-    }
-
-
-    function buildUI(collections) {
-      controlsPane.innerHTML = '';
-      if (!collections.length) {
-        controlsPane.innerText = 'コレクションが見つかりませんでした。ノード名を確認してください。';
-        return;
-      }
-
-      collections.forEach((c, i) => {
-        const div = document.createElement('div');
-        div.className = 'collection-item';
-
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = true;
-        input.id = `col_${i}`;
-        input.onchange = () => {
-          c.node.visible = input.checked;
-        };
-
-        const label = document.createElement('label');
-        label.htmlFor = input.id;
-        label.innerText = c.name;
-
-        div.appendChild(input);
-        div.appendChild(label);
-        controlsPane.appendChild(div);
-      });
-
-      resetBtn.onclick = () => {
-        collections.forEach((c, idx) => {
-          c.node.visible = true;
-          const el = document.getElementById(`col_${idx}`);
-          if (el) el.checked = true;
-        });
-      };
-    }
-
-    // ウィンドウリサイズ対応
-    window.addEventListener('resize', () => {
-      const w = window.innerWidth - 300;
-      const h = window.innerHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    });
-
-    // アニメーションループ
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    }
-    animate();
-  </script>
 </body>
 </html>
 
@@ -192,3 +95,4 @@
 - より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
 - セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
 -->
+
