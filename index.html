@@ -21,33 +21,28 @@
     button{margin-top:8px;padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff}
 
     /* Portrait: stack viewer above and controls below */
-    @media (orientation: portrait) and (max-width: 1200px) {
-      #app {
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr auto; /* viewer then controls */
-        height: 100vh;
-      }
-      /* sidebar becomes bottom controls area */
-      #sidebar {
-        order: 2;
-        grid-row: 2;
-        grid-column: 1;
-        border-right: none;
-        border-top: 1px solid #ddd;
-        max-height: var(--controls-height-vh); /* keep it within screen portion */
-        overflow:auto;
-        padding:10px;
-      }
-      #viewer {
-        grid-row: 1;
-        grid-column: 1;
-        height: calc(100vh - var(--controls-height-vh)); /* JS will sync canvas size too */
-      }
-      /* adjust UI sizing */
-      .collection-item { font-size: 14px; }
-      button { padding: 5px 8px; font-size: 14px; }
-      .hint { font-size: 13px; }
-    }
+/* Portrait: viewer 上 / controls 下 */
+@media (orientation: portrait) and (max-width: 1200px) {
+  #app {
+    display:flex;
+    flex-direction: column;
+    height:100vh;
+  }
+
+  #viewer {
+    flex: 1 1 auto;        /* ← 高さを自動で埋める */
+    background:#111;
+  }
+
+  #sidebar {
+    flex: 0 0 var(--controls-height-vh); /* ← 下部に固定配置（30～40%） */
+    border-top: 1px solid #ddd;
+    overflow:auto;
+    padding:10px;
+    background:#fff;
+  }
+}
+
 
     /* Fallback small screens: also treat narrow as portrait-like */
     @media (max-width: 600px) and (orientation: landscape) {
@@ -285,7 +280,7 @@
         camera.updateProjectionMatrix();
         // sync viewer element height so DOM and canvas align
         const viewerEl = document.getElementById('viewer');
-        if (viewerEl) viewerEl.style.height = `${h}px`;
+        if (viewerEl) viewerEl.style.height = ``;
       } else {
         // landscape: sidebar left with fixed width
         const sidebarWidth = sidebar.getBoundingClientRect().width || 300;
@@ -314,3 +309,4 @@
   </script>
 </body>
 </html>
+
