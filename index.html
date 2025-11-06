@@ -5,29 +5,54 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>GLB Viewer — Collection 切替スイッチ</title>
   <style>
+    :root{
+      --sidebar-width: 300px;
+      --controls-height-vh: 35vh; /* portrait の時の下部コントロール高さ（30-40%の間で調整） */
+    }
     html,body{height:100%;margin:0;font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP';}
-    /* Desktop default: sidebar fixed 300px */
-    #app{display:grid;grid-template-columns:300px 1fr;height:100vh}
+    /* Default: landscape/desktop layout (left sidebar) */
+    #app{display:grid;grid-template-columns:var(--sidebar-width) 1fr;height:100vh;grid-template-rows:1fr}
     #sidebar{padding:12px;border-right:1px solid #ddd;overflow:auto;background:#fff}
-    #viewer{background:#111}
+    #viewer{background:#111;min-height:0} /* min-height for flex/grid shrinking */
     .collection-item{display:flex;align-items:center;margin:6px 0}
     label{margin-left:8px}
-    header{font-weight:700;margin-bottom:8px}
+    header{font-weight:700;margin-bottom:8px;position:relative}
     .hint{font-size:13px;color:#666;margin-top:10px}
     button{margin-top:8px;padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff}
 
-    /* --- Responsive: on small screens use percentage columns (sidebar 20%, viewer 80%) --- */
-    @media (max-width: 600px) {
+    /* Portrait: stack viewer above and controls below */
+    @media (orientation: portrait) and (max-width: 1200px) {
       #app {
-        grid-template-columns: 20% 80% !important;
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr auto; /* viewer then controls */
+        height: 100vh;
       }
+      /* sidebar becomes bottom controls area */
       #sidebar {
-        padding: 8px;
-        font-size: 14px;
+        order: 2;
+        grid-row: 2;
+        grid-column: 1;
+        border-right: none;
+        border-top: 1px solid #ddd;
+        max-height: var(--controls-height-vh); /* keep it within screen portion */
+        overflow:auto;
+        padding:10px;
       }
-      /* make labels slightly smaller on small screens */
+      #viewer {
+        grid-row: 1;
+        grid-column: 1;
+        height: calc(100vh - var(--controls-height-vh)); /* JS will sync canvas size too */
+      }
+      /* adjust UI sizing */
       .collection-item { font-size: 14px; }
       button { padding: 5px 8px; font-size: 14px; }
+      .hint { font-size: 13px; }
+    }
+
+    /* Fallback small screens: also treat narrow as portrait-like */
+    @media (max-width: 600px) and (orientation: landscape) {
+      /* keep default left sidebar but reduce width a bit */
+      #app { grid-template-columns: 25% 75%; }
     }
   </style>
 
@@ -52,12 +77,10 @@
   </div>
 
   <script type="module">
-    /* imports via importmap in <head> */
     import * as THREE from 'three';
     import { OrbitControls } from 'OrbitControls';
     import { GLTFLoader } from 'GLTFLoader';
 
-    /* --- config: mapping of labels -> node names in GLB --- */
     const GLB_PATH = 'mouthmove-demo2-18.glb';
     const mapping = {
       '1.a-あ': ['line-ja','line-ja-moji-a','line-ja-moji-a002','moji_ea'],
@@ -73,26 +96,20 @@
     /* DOM refs */
     const container = document.getElementById('viewer');
     const controlsPane = document.getElementById('controls');
-    const hintEl = document.querySelector('.hint');
-    const headerEl = document.querySelector('header');
 
     /* three setup */
     const scene = new THREE.Scene();
-    // camera aspect will be set after we compute renderer size
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     camera.position.set(0, 1.6, 3);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    // do not set size here; call updateRendererSize() after append
     container.appendChild(renderer.domElement);
 
-    // controls
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.target.set(0, 1, 0);
     orbit.update();
 
-    // lighting
     const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
     hemi.position.set(0, 20, 0);
     scene.add(hemi);
@@ -100,7 +117,7 @@
     dir.position.set(3, 10, 10);
     scene.add(dir);
 
-    /* --- GLTF loader --- */
+    /* loader */
     let modelRoot = null;
     const loader = new GLTFLoader();
     controlsPane.innerText = 'Loading…';
@@ -113,7 +130,6 @@
         return;
       }
 
-      // expose for debugging
       window.modelRoot = model;
       window.appScene = scene;
 
@@ -129,10 +145,9 @@
       camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
       camera.updateProjectionMatrix();
 
-      // build UI
       buildSimpleGroupUI(modelRoot, mapping);
 
-      // After model added, ensure renderer size is correct
+      // ensure initial sizing after model added
       updateRendererSize();
     }, (xhr) => {
       try {
@@ -149,79 +164,37 @@
       console.error('GLB load error:', err);
     });
 
-    /* -------------------------
-       Helper: flexible name resolver
-       ------------------------- */
+    /* helpers (same as before) */
     function normalizeNameForMatch(name) {
       if (!name) return '';
       return name.toString().replace(/^[\s\>\<＞｜\|\u2502vV]+/, '').trim();
     }
-
     function resolveNodeByNameFlexible(root, targetName) {
       if (!root || !targetName) return null;
       let found = null;
-
-      // 1) exact
-      root.traverse(n => {
-        if (found) return;
-        if (n.name === targetName) found = n;
-      });
+      root.traverse(n => { if (found) return; if (n.name === targetName) found = n; });
       if (found) return found;
-
-      // 2) normalized exact
       const normTarget = normalizeNameForMatch(targetName);
-      root.traverse(n => {
-        if (found) return;
-        if (normalizeNameForMatch(n.name) === normTarget) found = n;
-      });
+      root.traverse(n => { if (found) return; if (normalizeNameForMatch(n.name) === normTarget) found = n; });
       if (found) return found;
-
-      // 3) includes (raw)
-      root.traverse(n => {
-        if (found) return;
-        const nm = n.name || '';
-        if (nm && nm.includes(targetName)) found = n;
-      });
+      root.traverse(n => { if (found) return; const nm = n.name || ''; if (nm && nm.includes(targetName)) found = n; });
       if (found) return found;
-
-      // 4) normalized includes
-      root.traverse(n => {
-        if (found) return;
-        const nm = normalizeNameForMatch(n.name);
-        if (nm && nm.includes(normTarget)) found = n;
-      });
-
+      root.traverse(n => { if (found) return; const nm = normalizeNameForMatch(n.name); if (nm && nm.includes(normTarget)) found = n; });
       return found;
     }
-
-    /* -------------------------
-       visibility setter that forces visible flag (safe)
-       ------------------------- */
     function setVisibilityRecursive(node, visible) {
       if (!node) return;
       try { node.visible = visible; } catch (e) { console.warn('cannot set visible', node, e); }
-      if (node.children && node.children.length) {
-        node.children.forEach(c => setVisibilityRecursive(c, visible));
-      }
+      if (node.children && node.children.length) node.children.forEach(c => setVisibilityRecursive(c, visible));
     }
 
-    /* -------------------------
-       buildSimpleGroupUI
-       - shows only group checkbox lines (labels from mapping keys)
-       ------------------------- */
     function buildSimpleGroupUI(root, mappingObj) {
-      controlsPane.innerHTML = ''; // clear
-
-      // build a name->node map for quick lookup
+      controlsPane.innerHTML = '';
       const nameToNode = {};
       root.traverse(n => { if (n.name) nameToNode[n.name] = n; });
-
       const fragment = document.createDocumentFragment();
       const labels = Object.keys(mappingObj);
-
-      // store resolved group nodes per label
-      const groupMap = {}; // label -> array of nodes
-
+      const groupMap = {};
       labels.forEach((label, idx) => {
         const wantedNames = mappingObj[label] || [];
         const resolved = [];
@@ -232,20 +205,15 @@
           else unresolved.push(nm);
         });
         groupMap[label] = resolved;
-
-        // UI row
         const row = document.createElement('div');
         row.className = 'collection-item';
         row.style.display = 'flex';
         row.style.alignItems = 'center';
         row.style.margin = '6px 0';
-
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = `grp_${idx}`;
         checkbox.style.marginRight = '8px';
-
-        // initial checked: if any resolved node exists, use its visible; otherwise true and disabled
         if (resolved.length) {
           checkbox.checked = resolved[0].visible !== undefined ? resolved[0].visible : true;
         } else {
@@ -253,85 +221,89 @@
           checkbox.disabled = true;
           row.style.opacity = '0.6';
         }
-
         const labelEl = document.createElement('label');
         labelEl.htmlFor = checkbox.id;
         labelEl.textContent = label;
         labelEl.style.userSelect = 'none';
         labelEl.style.cursor = resolved.length ? 'pointer' : 'default';
-
         row.appendChild(checkbox);
         row.appendChild(labelEl);
         fragment.appendChild(row);
-
-        // console warning if unresolved
-        if (unresolved.length) {
-          console.warn(`Group "${label}" unresolved items:`, unresolved);
-        }
-
-        // checkbox action: toggle all resolved nodes (and their descendants)
+        if (unresolved.length) console.warn(`Group "${label}" unresolved items:`, unresolved);
         checkbox.addEventListener('change', () => {
           const v = checkbox.checked;
           resolved.forEach(n => setVisibilityRecursive(n, v));
         });
-
-        // clicking label toggles checkbox
         labelEl.addEventListener('click', () => {
           if (checkbox.disabled) return;
           checkbox.checked = !checkbox.checked;
           checkbox.dispatchEvent(new Event('change'));
         });
       });
-
-      // Display All row (button)
+      // Display All button (optional)
       const displayAllRow = document.createElement('div');
       displayAllRow.style.marginTop = '10px';
       displayAllRow.style.display = 'flex';
       displayAllRow.style.gap = '8px';
       displayAllRow.style.alignItems = 'center';
-
       const displayAllBtn = document.createElement('button');
       displayAllBtn.textContent = 'Display All';
       displayAllBtn.style.padding = '6px 10px';
       displayAllBtn.style.borderRadius = '6px';
       displayAllBtn.style.cursor = 'pointer';
-
       displayAllBtn.addEventListener('click', () => {
         root.traverse(n => { try { n.visible = true; } catch (e) {} });
-        // re-enable and check all checkboxes
         controlsPane.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; cb.parentElement.style.opacity = '1'; });
       });
-
       displayAllRow.appendChild(displayAllBtn);
       fragment.appendChild(displayAllRow);
-
       controlsPane.appendChild(fragment);
-
-      // expose groupMap for debugging
       window._groupMap = groupMap;
     }
 
-    /* -------------------------
-       Responsive renderer sizing
-       - reads actual sidebar width to compute viewer width
-       ------------------------- */
+    /* Responsive renderer sizing: handle portrait (bottom controls) and landscape (left controls) */
     function updateRendererSize() {
       const sidebar = document.getElementById('sidebar');
-      const sidebarWidth = sidebar ? Math.round(sidebar.getBoundingClientRect().width) : 300;
-      const w = Math.max(window.innerWidth - sidebarWidth, 100);
-      const h = window.innerHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+      if (!sidebar) {
+        const w = Math.max(window.innerWidth - 300, 100);
+        const h = window.innerHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        return;
+      }
+
+      if (isPortrait) {
+        // controls are at bottom: measure their height (CSS limits it to --controls-height-vh)
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const controlsHeight = Math.min(sidebarRect.height, window.innerHeight * 0.9); // safe cap
+        const w = Math.max(window.innerWidth, 100);
+        const h = Math.max(window.innerHeight - controlsHeight, 100);
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        // sync viewer element height so DOM and canvas align
+        const viewerEl = document.getElementById('viewer');
+        if (viewerEl) viewerEl.style.height = `${h}px`;
+      } else {
+        // landscape: sidebar left with fixed width
+        const sidebarWidth = sidebar.getBoundingClientRect().width || 300;
+        const w = Math.max(window.innerWidth - sidebarWidth, 100);
+        const h = window.innerHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        const viewerEl = document.getElementById('viewer');
+        if (viewerEl) viewerEl.style.height = '';
+      }
     }
 
-    // initial sizing based on current layout
+    // initial sizing and event listeners
     updateRendererSize();
-
-    // handle resize (and orientation change)
-    window.addEventListener('resize', () => {
-      updateRendererSize();
-    });
+    window.addEventListener('resize', () => updateRendererSize());
+    // also respond to orientation changes explicitly
+    window.addEventListener('orientationchange', () => setTimeout(updateRendererSize, 120));
 
     /* render loop */
     function animate() {
@@ -339,7 +311,6 @@
       renderer.render(scene, camera);
     }
     animate();
-
   </script>
 </body>
 </html>
