@@ -6,363 +6,340 @@
   <title>GLB Viewer — Collection 切替スイッチ</title>
   <style>
     html,body{height:100%;margin:0;font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP';}
+    /* Desktop default: sidebar fixed 300px */
     #app{display:grid;grid-template-columns:300px 1fr;height:100vh}
-    #sidebar{padding:12px;border-right:1px solid #ddd;overflow:auto}
+    #sidebar{padding:12px;border-right:1px solid #ddd;overflow:auto;background:#fff}
     #viewer{background:#111}
     .collection-item{display:flex;align-items:center;margin:6px 0}
     label{margin-left:8px}
     header{font-weight:700;margin-bottom:8px}
     .hint{font-size:13px;color:#666;margin-top:10px}
     button{margin-top:8px;padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff}
+
+    /* --- Responsive: on small screens use percentage columns (sidebar 20%, viewer 80%) --- */
+    @media (max-width: 600px) {
+      #app {
+        grid-template-columns: 20% 80% !important;
+      }
+      #sidebar {
+        padding: 8px;
+        font-size: 14px;
+      }
+      /* make labels slightly smaller on small screens */
+      .collection-item { font-size: 14px; }
+      button { padding: 5px 8px; font-size: 14px; }
+    }
   </style>
 
-<script type="importmap">
-        {
-            "imports": {
-                 "three": "https://unpkg.com/three@0.152.2/build/three.module.js",
-      "OrbitControls": "https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js",
-      "GLTFLoader": "https://unpkg.com/three@0.152.2/examples/jsm/loaders/GLTFLoader.js"
-            }
-        }
-    </script>
-  
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.152.2/build/three.module.js",
+        "OrbitControls": "https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js",
+        "GLTFLoader": "https://unpkg.com/three@0.152.2/examples/jsm/loaders/GLTFLoader.js"
+      }
+    }
+  </script>
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
-      <header>コレクション表示切替</header>
-      <div id="controls">読み込み中…</div>
-      <div class="hint">※GLB 内のノード名（Collection等）を元に自動で一覧化します。ノード名は Blender 等で設定してください。</div>
+      <header>Collection Visibility</header>
+      <div id="controls">Loading…</div>
+      <div class="hint">Toggle groups to show or hide parts of the model. Use your mouse to rotate and zoom.</div>
     </aside>
     <main id="viewer"></main>
   </div>
-  
+
   <script type="module">
-/* imports via importmap in <head> */
-import * as THREE from 'three';
-import { OrbitControls } from 'OrbitControls';
-import { GLTFLoader } from 'GLTFLoader';
+    /* imports via importmap in <head> */
+    import * as THREE from 'three';
+    import { OrbitControls } from 'OrbitControls';
+    import { GLTFLoader } from 'GLTFLoader';
 
-/* --- config: mapping of labels -> node names in GLB --- */
-const GLB_PATH = 'mouthmove-demo2-18.glb';
-const mapping = {
-  '1.a-あ': ['line-ja','line-ja-moji-a','line-ja-moji-a002','moji_ea'],
-  '2.i-い': ['line-ji','line-ji-moji-i','line-ji-moji-i001','mojii_ei'],
-  '3.u-う': ['line-ju','line-ju-moji-u','moji_eu'],
-  '4.e-え': ['line-je','line-je-moji-e','line-je-moji-e001','moji_ee'],
-  '5.o-お': ['line-jo','line-jo-moji-o','line-jo-moji-o001','moji_eo'],
-  '6.k1-으': ['line-keo','line-keo-moji-keo'],
-  '7.k2-우': ['line-ku','line-ku-moji-ku'],
-  '8.k3-어': ['line-kwu','line-kwu-moji-kwu']
-};
+    /* --- config: mapping of labels -> node names in GLB --- */
+    const GLB_PATH = 'mouthmove-demo2-18.glb';
+    const mapping = {
+      '1.a-あ': ['line-ja','line-ja-moji-a','line-ja-moji-a002','moji_ea'],
+      '2.i-い': ['line-ji','line-ji-moji-i','line-ji-moji-i001','mojii_ei'],
+      '3.u-う': ['line-ju','line-ju-moji-u','moji_eu'],
+      '4.e-え': ['line-je','line-je-moji-e','line-je-moji-e001','moji_ee'],
+      '5.o-お': ['line-jo','line-jo-moji-o','line-jo-moji-o001','moji_eo'],
+      '6.k1-으': ['line-keo','line-keo-moji-keo'],
+      '7.k2-우': ['line-ku','line-ku-moji-ku'],
+      '8.k3-어': ['line-kwu','line-kwu-moji-kwu']
+    };
 
-/* subtree expand depth is irrelevant now (no subtrees shown) */
-const SUBTREE_EXPAND_DEPTH = 2;
+    /* DOM refs */
+    const container = document.getElementById('viewer');
+    const controlsPane = document.getElementById('controls');
+    const hintEl = document.querySelector('.hint');
+    const headerEl = document.querySelector('header');
 
-/* DOM refs */
-const container = document.getElementById('viewer');
-const controlsPane = document.getElementById('controls');
-const resetBtn = document.getElementById('resetBtn');
-const hintEl = document.querySelector('.hint');
-const headerEl = document.querySelector('header');
+    /* three setup */
+    const scene = new THREE.Scene();
+    // camera aspect will be set after we compute renderer size
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    camera.position.set(0, 1.6, 3);
 
-/* Set English header/hint */
-if (headerEl) headerEl.innerText = 'Collection Visibility';
-if (hintEl) hintEl.innerText = 'Toggle groups to show or hide parts of the model. Use your mouse to rotate and zoom.';
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    // do not set size here; call updateRendererSize() after append
+    container.appendChild(renderer.domElement);
 
-/* three setup */
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, (window.innerWidth - 300) / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 1.6, 3);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(window.innerWidth - 300, window.innerHeight);
-container.appendChild(renderer.domElement);
+    // controls
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.target.set(0, 1, 0);
+    orbit.update();
 
-const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.set(0, 1, 0);
-orbit.update();
+    // lighting
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    hemi.position.set(0, 20, 0);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(3, 10, 10);
+    scene.add(dir);
 
-const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
-hemi.position.set(0, 20, 0);
-scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-dir.position.set(3, 10, 10);
-scene.add(dir);
-
-/* loader */
-let modelRoot = null;
-const loader = new GLTFLoader();
-controlsPane.innerText = 'Loading…';
-
-loader.load(GLB_PATH, (gltf) => {
-  const model = gltf.scene || (gltf.scenes && gltf.scenes[0]);
-  if (!model) {
-    controlsPane.innerText = 'Model empty (gltf.scene is null). Check console.';
-    console.error('gltf.scene is null', gltf);
-    return;
-  }
-
-  // expose for debugging
-  window.modelRoot = model;
-  window.appScene = scene;
-
-  modelRoot = model;
-  scene.add(model);
-
-  // camera fit
-  const bbox = new THREE.Box3().setFromObject(model);
-  const size = bbox.getSize(new THREE.Vector3()).length();
-  const center = bbox.getCenter(new THREE.Vector3());
-  orbit.target.copy(center);
-  orbit.update();
-  camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
-  camera.updateProjectionMatrix();
-
-  // build the simple grouped UI (only top-level group checkboxes + Display All)
-  buildSimpleGroupUI(modelRoot, mapping);
-
-}, (xhr) => {
-  try {
-    if (xhr && xhr.lengthComputable) {
-      controlsPane.innerText = `Loading… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
-    } else {
-      controlsPane.innerText = 'Loading…';
-    }
-  } catch (e) {
+    /* --- GLTF loader --- */
+    let modelRoot = null;
+    const loader = new GLTFLoader();
     controlsPane.innerText = 'Loading…';
-  }
-}, (err) => {
-  controlsPane.innerText = 'Failed to load model. Check console.';
-  console.error('GLB load error:', err);
-});
 
-/* -------------------------
-   Helper: flexible name resolver
-   tries: exact, normalized exact, includes, normalized includes
-   normalized trims leading decoration chars like > ｜ v etc.
-   ------------------------- */
-function normalizeNameForMatch(name) {
-  if (!name) return '';
-  return name.toString().replace(/^[\s\>\<＞｜\|\u2502vV]+/, '').trim();
-}
+    loader.load(GLB_PATH, (gltf) => {
+      const model = gltf.scene || (gltf.scenes && gltf.scenes[0]);
+      if (!model) {
+        controlsPane.innerText = 'Model empty (gltf.scene is null). Check console.';
+        console.error('gltf.scene is null', gltf);
+        return;
+      }
 
-function resolveNodeByNameFlexible(root, targetName) {
-  if (!root || !targetName) return null;
-  let found = null;
+      // expose for debugging
+      window.modelRoot = model;
+      window.appScene = scene;
 
-  // 1) exact
-  root.traverse(n => {
-    if (found) return;
-    if (n.name === targetName) found = n;
-  });
-  if (found) return found;
+      modelRoot = model;
+      scene.add(model);
 
-  // 2) normalized exact
-  const normTarget = normalizeNameForMatch(targetName);
-  root.traverse(n => {
-    if (found) return;
-    if (normalizeNameForMatch(n.name) === normTarget) found = n;
-  });
-  if (found) return found;
+      // fit camera
+      const bbox = new THREE.Box3().setFromObject(model);
+      const size = bbox.getSize(new THREE.Vector3()).length();
+      const center = bbox.getCenter(new THREE.Vector3());
+      orbit.target.copy(center);
+      orbit.update();
+      camera.position.copy(center).add(new THREE.Vector3(0, size * 0.5, size * 1.5));
+      camera.updateProjectionMatrix();
 
-  // 3) includes (raw)
-  root.traverse(n => {
-    if (found) return;
-    const nm = n.name || '';
-    if (nm && nm.includes(targetName)) found = n;
-  });
-  if (found) return found;
+      // build UI
+      buildSimpleGroupUI(modelRoot, mapping);
 
-  // 4) normalized includes
-  root.traverse(n => {
-    if (found) return;
-    const nm = normalizeNameForMatch(n.name);
-    if (nm && nm.includes(normTarget)) found = n;
-  });
-
-  return found;
-}
-
-/* -------------------------
-   visibility setter that forces visible flag (safe)
-   ------------------------- */
-function setVisibilityRecursive(node, visible) {
-  if (!node) return;
-  try { node.visible = visible; } catch (e) { console.warn('cannot set visible', node, e); }
-  if (node.children && node.children.length) {
-    node.children.forEach(c => setVisibilityRecursive(c, visible));
-  }
-}
-
-/* -------------------------
-   buildSimpleGroupUI
-   - shows only group checkbox lines (labels from mapping keys)
-   - last control is Display All button
-   ------------------------- */
-function buildSimpleGroupUI(root, mappingObj) {
-  controlsPane.innerHTML = ''; // clear
-
-  // build a name->node map for quick lookup
-  const nameToNode = {};
-  root.traverse(n => { if (n.name) nameToNode[n.name] = n; });
-
-  const fragment = document.createDocumentFragment();
-  const labels = Object.keys(mappingObj);
-
-  // store resolved group nodes per label
-  const groupMap = {}; // label -> array of nodes
-
-  labels.forEach((label, idx) => {
-    const wantedNames = mappingObj[label] || [];
-    const resolved = [];
-    const unresolved = [];
-    wantedNames.forEach(nm => {
-      const node = nameToNode[nm] || resolveNodeByNameFlexible(root, nm);
-      if (node) resolved.push(node);
-      else unresolved.push(nm);
+      // After model added, ensure renderer size is correct
+      updateRendererSize();
+    }, (xhr) => {
+      try {
+        if (xhr && xhr.lengthComputable) {
+          controlsPane.innerText = `Loading… ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`;
+        } else {
+          controlsPane.innerText = 'Loading…';
+        }
+      } catch (e) {
+        controlsPane.innerText = 'Loading…';
+      }
+    }, (err) => {
+      controlsPane.innerText = 'Failed to load model. Check console.';
+      console.error('GLB load error:', err);
     });
-    groupMap[label] = resolved;
 
-    // UI row
-    const row = document.createElement('div');
-    row.className = 'collection-item';
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.margin = '6px 0';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.id = `grp_${idx}`;
-    checkbox.style.marginRight = '8px';
-
-    // initial checked: if any resolved node exists, use its visible; otherwise true and disabled
-    if (resolved.length) {
-      checkbox.checked = resolved[0].visible !== undefined ? resolved[0].visible : true;
-    } else {
-      checkbox.checked = true;
-      checkbox.disabled = true;
-      row.style.opacity = '0.6';
+    /* -------------------------
+       Helper: flexible name resolver
+       ------------------------- */
+    function normalizeNameForMatch(name) {
+      if (!name) return '';
+      return name.toString().replace(/^[\s\>\<＞｜\|\u2502vV]+/, '').trim();
     }
 
-    const labelEl = document.createElement('label');
-    labelEl.htmlFor = checkbox.id;
-    labelEl.textContent = label;
-    labelEl.style.userSelect = 'none';
-    labelEl.style.cursor = resolved.length ? 'pointer' : 'default';
+    function resolveNodeByNameFlexible(root, targetName) {
+      if (!root || !targetName) return null;
+      let found = null;
 
-    row.appendChild(checkbox);
-    row.appendChild(labelEl);
-    fragment.appendChild(row);
+      // 1) exact
+      root.traverse(n => {
+        if (found) return;
+        if (n.name === targetName) found = n;
+      });
+      if (found) return found;
 
-    // console warning if unresolved
-    if (unresolved.length) {
-      console.warn(`Group "${label}" unresolved items:`, unresolved);
+      // 2) normalized exact
+      const normTarget = normalizeNameForMatch(targetName);
+      root.traverse(n => {
+        if (found) return;
+        if (normalizeNameForMatch(n.name) === normTarget) found = n;
+      });
+      if (found) return found;
+
+      // 3) includes (raw)
+      root.traverse(n => {
+        if (found) return;
+        const nm = n.name || '';
+        if (nm && nm.includes(targetName)) found = n;
+      });
+      if (found) return found;
+
+      // 4) normalized includes
+      root.traverse(n => {
+        if (found) return;
+        const nm = normalizeNameForMatch(n.name);
+        if (nm && nm.includes(normTarget)) found = n;
+      });
+
+      return found;
     }
 
-    // checkbox action: toggle all resolved nodes (and their descendants)
-    checkbox.addEventListener('change', () => {
-      const v = checkbox.checked;
-      resolved.forEach(n => setVisibilityRecursive(n, v));
+    /* -------------------------
+       visibility setter that forces visible flag (safe)
+       ------------------------- */
+    function setVisibilityRecursive(node, visible) {
+      if (!node) return;
+      try { node.visible = visible; } catch (e) { console.warn('cannot set visible', node, e); }
+      if (node.children && node.children.length) {
+        node.children.forEach(c => setVisibilityRecursive(c, visible));
+      }
+    }
+
+    /* -------------------------
+       buildSimpleGroupUI
+       - shows only group checkbox lines (labels from mapping keys)
+       ------------------------- */
+    function buildSimpleGroupUI(root, mappingObj) {
+      controlsPane.innerHTML = ''; // clear
+
+      // build a name->node map for quick lookup
+      const nameToNode = {};
+      root.traverse(n => { if (n.name) nameToNode[n.name] = n; });
+
+      const fragment = document.createDocumentFragment();
+      const labels = Object.keys(mappingObj);
+
+      // store resolved group nodes per label
+      const groupMap = {}; // label -> array of nodes
+
+      labels.forEach((label, idx) => {
+        const wantedNames = mappingObj[label] || [];
+        const resolved = [];
+        const unresolved = [];
+        wantedNames.forEach(nm => {
+          const node = nameToNode[nm] || resolveNodeByNameFlexible(root, nm);
+          if (node) resolved.push(node);
+          else unresolved.push(nm);
+        });
+        groupMap[label] = resolved;
+
+        // UI row
+        const row = document.createElement('div');
+        row.className = 'collection-item';
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.margin = '6px 0';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `grp_${idx}`;
+        checkbox.style.marginRight = '8px';
+
+        // initial checked: if any resolved node exists, use its visible; otherwise true and disabled
+        if (resolved.length) {
+          checkbox.checked = resolved[0].visible !== undefined ? resolved[0].visible : true;
+        } else {
+          checkbox.checked = true;
+          checkbox.disabled = true;
+          row.style.opacity = '0.6';
+        }
+
+        const labelEl = document.createElement('label');
+        labelEl.htmlFor = checkbox.id;
+        labelEl.textContent = label;
+        labelEl.style.userSelect = 'none';
+        labelEl.style.cursor = resolved.length ? 'pointer' : 'default';
+
+        row.appendChild(checkbox);
+        row.appendChild(labelEl);
+        fragment.appendChild(row);
+
+        // console warning if unresolved
+        if (unresolved.length) {
+          console.warn(`Group "${label}" unresolved items:`, unresolved);
+        }
+
+        // checkbox action: toggle all resolved nodes (and their descendants)
+        checkbox.addEventListener('change', () => {
+          const v = checkbox.checked;
+          resolved.forEach(n => setVisibilityRecursive(n, v));
+        });
+
+        // clicking label toggles checkbox
+        labelEl.addEventListener('click', () => {
+          if (checkbox.disabled) return;
+          checkbox.checked = !checkbox.checked;
+          checkbox.dispatchEvent(new Event('change'));
+        });
+      });
+
+      // Display All row (button)
+      const displayAllRow = document.createElement('div');
+      displayAllRow.style.marginTop = '10px';
+      displayAllRow.style.display = 'flex';
+      displayAllRow.style.gap = '8px';
+      displayAllRow.style.alignItems = 'center';
+
+      const displayAllBtn = document.createElement('button');
+      displayAllBtn.textContent = 'Display All';
+      displayAllBtn.style.padding = '6px 10px';
+      displayAllBtn.style.borderRadius = '6px';
+      displayAllBtn.style.cursor = 'pointer';
+
+      displayAllBtn.addEventListener('click', () => {
+        root.traverse(n => { try { n.visible = true; } catch (e) {} });
+        // re-enable and check all checkboxes
+        controlsPane.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; cb.parentElement.style.opacity = '1'; });
+      });
+
+      displayAllRow.appendChild(displayAllBtn);
+      fragment.appendChild(displayAllRow);
+
+      controlsPane.appendChild(fragment);
+
+      // expose groupMap for debugging
+      window._groupMap = groupMap;
+    }
+
+    /* -------------------------
+       Responsive renderer sizing
+       - reads actual sidebar width to compute viewer width
+       ------------------------- */
+    function updateRendererSize() {
+      const sidebar = document.getElementById('sidebar');
+      const sidebarWidth = sidebar ? Math.round(sidebar.getBoundingClientRect().width) : 300;
+      const w = Math.max(window.innerWidth - sidebarWidth, 100);
+      const h = window.innerHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    // initial sizing based on current layout
+    updateRendererSize();
+
+    // handle resize (and orientation change)
+    window.addEventListener('resize', () => {
+      updateRendererSize();
     });
 
-    // clicking label toggles checkbox
-    labelEl.addEventListener('click', () => {
-      if (checkbox.disabled) return;
-      checkbox.checked = !checkbox.checked;
-      checkbox.dispatchEvent(new Event('change'));
-    });
-  });
+    /* render loop */
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
 
-  // Display All row (button)
-  const displayAllRow = document.createElement('div');
-  displayAllRow.style.marginTop = '10px';
-  displayAllRow.style.display = 'flex';
-  displayAllRow.style.gap = '8px';
-  displayAllRow.style.alignItems = 'center';
-
-  const displayAllBtn = document.createElement('button');
-  displayAllBtn.textContent = 'Display All';
-  displayAllBtn.style.padding = '6px 10px';
-  displayAllBtn.style.borderRadius = '6px';
-  displayAllBtn.style.cursor = 'pointer';
-
-  displayAllBtn.addEventListener('click', () => {
-    root.traverse(n => { try { n.visible = true; } catch (e) {} });
-    // re-enable and check all checkboxes
-    controlsPane.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; cb.parentElement.style.opacity = '1'; });
-  });
-
-  displayAllRow.appendChild(displayAllBtn);
-  fragment.appendChild(displayAllRow);
-
-  controlsPane.appendChild(fragment);
-
-  // expose groupMap for debugging
-  window._groupMap = groupMap;
-}
-
-/* resize & render */
-window.addEventListener('resize', () => {
-  const w = window.innerWidth - 300;
-  const h = window.innerHeight;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-});
-
-function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
-}
-animate();
-</script>
-
-
-   
+  </script>
 </body>
 </html>
-
-
-<!-- README（短い手順） -->
-
-<!--
-使い方:
-1) リポジトリ構成例:
-   /index.html  <- このファイル
-   /models/mouthmove-demo2-18.glb  <- アップロードした GLB
-
-2) GitHub に push する
-   - リポジトリを作成してファイルを追加して push してください。
-   - GitHub Pages で公開する方法: Settings -> Pages から "branch: main" と "/ (root)" を選ぶか、/docs フォルダに入れて "branch: main /docs" を選択してください。
-   - もしくは gh-pages ブランチを作って公開しても OK。
-
-3) パスの確認
-   - GLB のパスが変わる場合は、index.html 内の GLB_PATH を編集してください。
-
-4) Blender での準備
-   - コレクション名（Collection）をノード名（Object 名）としてエクスポートすると、このビューワで見やすくなります。
-   - ノード名が空の場合は自動で Collection_0 などの名前が付けられます。
-
-補足:
-- より細かく "メッシュごと" や "子ノードまで展開してトグル" したい場合は、findCollections 関数をカスタマイズしてください。
-- セキュリティ: GitHub Pages では raw.githubusercontent.com から直接モデルを読み込むのも可能ですが、同じリポジトリに置くのが簡単です。
--->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
