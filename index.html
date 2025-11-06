@@ -97,18 +97,12 @@
 
     /**************************************************************************
      * Renderer: optimized defaults
-     * - antialias: false (lower CPU/GPU)
-     * - limit devicePixelRatio to MAX_DPR
-     * - shadowMap disabled (unless you need it)
      **************************************************************************/
     const MAX_DPR = 1.0; // set to 0.75 or 1.0 based on desired perf/quality
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
     renderer.shadowMap.enabled = false;
-    // append canvas to container
     container.appendChild(renderer.domElement);
-
-    // ensure the canvas covers the viewer element area
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
@@ -129,6 +123,83 @@
     const loader = new GLTFLoader();
     controlsPane.innerText = 'Loading…';
 
+    /**************************************************************************
+     * Render control state (must be declared before any requestRender calls)
+     **************************************************************************/
+    let needsRender = false;      // if true, next tick will render
+    let isInteracting = false;    // true while OrbitControls is being used
+    let animationLoopRunning = false;
+    let lastRenderTime = 0;
+    const TARGET_FPS = 30; // when interacting, cap FPS to limit CPU
+
+    // requestRender as function declaration (safe)
+    function requestRender() {
+      needsRender = true;
+      if (!animationLoopRunning) startAnimationLoop();
+    }
+
+    function startAnimationLoop() {
+      if (animationLoopRunning) return;
+      animationLoopRunning = true;
+      lastRenderTime = performance.now();
+      requestAnimationFrame(tick);
+    }
+
+    function stopAnimationLoop() {
+      animationLoopRunning = false;
+    }
+
+    function tick(now) {
+      if (!animationLoopRunning) return;
+      const dt = now - lastRenderTime;
+
+      if (isInteracting) {
+        // during interaction, render at up to TARGET_FPS
+        if (dt >= (1000 / TARGET_FPS)) {
+          renderer.render(scene, camera);
+          lastRenderTime = now;
+          needsRender = false;
+        }
+      } else {
+        // not interacting: render only when needed (on-demand)
+        if (needsRender) {
+          renderer.render(scene, camera);
+          needsRender = false;
+          lastRenderTime = now;
+        } else {
+          // nothing to render, stop the loop to save CPU
+          animationLoopRunning = false;
+          return;
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // OrbitControls events to switch interaction mode and request renders
+    orbit.addEventListener('start', () => {
+      isInteracting = true;
+      requestRender();
+    });
+    orbit.addEventListener('change', () => {
+      requestRender();
+    });
+    orbit.addEventListener('end', () => {
+      isInteracting = false;
+      requestRender();
+    });
+
+    // visibility: pause rendering when tab is hidden
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopAnimationLoop();
+      } else {
+        requestRender();
+      }
+    });
+
+    /**************************************************************************
+     * GLTF load + rest of UI
+     **************************************************************************/
     loader.load(GLB_PATH, (gltf) => {
       const model = gltf.scene || (gltf.scenes && gltf.scenes[0]);
       if (!model) {
@@ -312,85 +383,7 @@
     // also respond to orientation changes explicitly
     window.addEventListener('orientationchange', () => setTimeout(updateRendererSize, 120));
 
-    /**************************************************************************
-     * Smart render loop (Render-on-demand + interaction mode)
-     **************************************************************************/
-
-    let needsRender = true;      // if true, next tick will render
-    let isInteracting = false;   // true while OrbitControls is being used
-    let animationLoopRunning = false;
-    const TARGET_FPS = 30; // when interacting, cap FPS to limit CPU
-
-    function requestRender() {
-      needsRender = true;
-      if (!animationLoopRunning) startAnimationLoop();
-    }
-
-    function startAnimationLoop() {
-      if (animationLoopRunning) return;
-      animationLoopRunning = true;
-      lastRenderTime = performance.now();
-      requestAnimationFrame(tick);
-    }
-
-    function stopAnimationLoop() {
-      animationLoopRunning = false;
-    }
-
-    let lastRenderTime = 0;
-    function tick(now) {
-      if (!animationLoopRunning) return;
-      const dt = now - lastRenderTime;
-
-      if (isInteracting) {
-        // during interaction, render at up to TARGET_FPS
-        if (dt >= (1000 / TARGET_FPS)) {
-          renderer.render(scene, camera);
-          lastRenderTime = now;
-          needsRender = false;
-        }
-      } else {
-        // not interacting: render only when needed (on-demand)
-        if (needsRender) {
-          renderer.render(scene, camera);
-          needsRender = false;
-          lastRenderTime = now;
-        } else {
-          // nothing to render, stop the loop to save CPU
-          animationLoopRunning = false;
-          return;
-        }
-      }
-      requestAnimationFrame(tick);
-    }
-
-    // OrbitControls events to switch interaction mode and request renders
-    orbit.addEventListener('start', () => {
-      isInteracting = true;
-      requestRender();
-    });
-    orbit.addEventListener('change', () => {
-      // each time controls change, mark render needed
-      requestRender();
-    });
-    orbit.addEventListener('end', () => {
-      isInteracting = false;
-      requestRender();
-    });
-
-    // resize should request render
-    window.addEventListener('resize', () => requestRender());
-
-    // page visibility: pause rendering when tab is hidden
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        stopAnimationLoop();
-      } else {
-        requestRender();
-      }
-    });
-
-    // initial render kick
+    // initial render kick (already safe because needsRender etc are declared)
     requestRender();
 
   </script>
