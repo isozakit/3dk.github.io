@@ -47,6 +47,19 @@
       /* keep default left sidebar but reduce width a bit */
       #app { grid-template-columns: 25% 75%; }
     }
+#copyright-watermark {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  background: rgba(0,0,0,0.35);
+  border-radius: 6px;
+  backdrop-filter: blur(3px);
+  pointer-events: none; /* ←クリック操作を邪魔しない */
+  z-index: 9999;
+}
   </style>
 
   <script type="importmap">
@@ -387,5 +400,9 @@
     requestRender();
 
   </script>
+  <div id="copyright-watermark">
+  © Pro'ximo All Rights Reserved.
+  </div>
 </body>
 </html>
+
