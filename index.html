@@ -20,29 +20,27 @@
     .hint{font-size:13px;color:#666;margin-top:10px}
     button{margin-top:8px;padding:6px 10px;border-radius:6px;border:1px solid #ccc;background:#fff}
 
-    /* Portrait: stack viewer above and controls below */
-/* Portrait: viewer 上 / controls 下 */
-@media (orientation: portrait) and (max-width: 1200px) {
-  #app {
-    display:flex;
-    flex-direction: column;
-    height:100vh;
-  }
+    /* Portrait: viewer 上 / controls 下 */
+    @media (orientation: portrait) and (max-width: 1200px) {
+      #app {
+        display:flex;
+        flex-direction: column;
+        height:100vh;
+      }
 
-  #viewer {
-    flex: 1 1 auto;        /* ← 高さを自動で埋める */
-    background:#111;
-  }
+      #viewer {
+        flex: 1 1 auto;        /* ← 高さを自動で埋める */
+        background:#111;
+      }
 
-  #sidebar {
-    flex: 0 0 var(--controls-height-vh); /* ← 下部に固定配置（30～40%） */
-    border-top: 1px solid #ddd;
-    overflow:auto;
-    padding:10px;
-    background:#fff;
-  }
-}
-
+      #sidebar {
+        flex: 0 0 var(--controls-height-vh); /* ← 下部に固定配置（30～40%） */
+        border-top: 1px solid #ddd;
+        overflow:auto;
+        padding:10px;
+        background:#fff;
+      }
+    }
 
     /* Fallback small screens: also treat narrow as portrait-like */
     @media (max-width: 600px) and (orientation: landscape) {
@@ -97,9 +95,23 @@
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     camera.position.set(0, 1.6, 3);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    /**************************************************************************
+     * Renderer: optimized defaults
+     * - antialias: false (lower CPU/GPU)
+     * - limit devicePixelRatio to MAX_DPR
+     * - shadowMap disabled (unless you need it)
+     **************************************************************************/
+    const MAX_DPR = 1.0; // set to 0.75 or 1.0 based on desired perf/quality
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
+    renderer.shadowMap.enabled = false;
+    // append canvas to container
     container.appendChild(renderer.domElement);
+
+    // ensure the canvas covers the viewer element area
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.display = 'block';
 
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.target.set(0, 1, 0);
@@ -144,6 +156,7 @@
 
       // ensure initial sizing after model added
       updateRendererSize();
+      requestRender(); // render first view
     }, (xhr) => {
       try {
         if (xhr && xhr.lengthComputable) {
@@ -228,6 +241,7 @@
         checkbox.addEventListener('change', () => {
           const v = checkbox.checked;
           resolved.forEach(n => setVisibilityRecursive(n, v));
+          requestRender();
         });
         labelEl.addEventListener('click', () => {
           if (checkbox.disabled) return;
@@ -249,6 +263,7 @@
       displayAllBtn.addEventListener('click', () => {
         root.traverse(n => { try { n.visible = true; } catch (e) {} });
         controlsPane.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; cb.disabled = false; cb.parentElement.style.opacity = '1'; });
+        requestRender();
       });
       displayAllRow.appendChild(displayAllBtn);
       fragment.appendChild(displayAllRow);
@@ -278,9 +293,7 @@
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        // sync viewer element height so DOM and canvas align
-        const viewerEl = document.getElementById('viewer');
-        if (viewerEl) viewerEl.style.height = ``;
+        // do NOT set viewerEl.style.height here; CSS flex manages it
       } else {
         // landscape: sidebar left with fixed width
         const sidebarWidth = sidebar.getBoundingClientRect().width || 300;
@@ -289,9 +302,8 @@
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        const viewerEl = document.getElementById('viewer');
-        if (viewerEl) viewerEl.style.height = '';
       }
+      requestRender();
     }
 
     // initial sizing and event listeners
@@ -300,13 +312,87 @@
     // also respond to orientation changes explicitly
     window.addEventListener('orientationchange', () => setTimeout(updateRendererSize, 120));
 
-    /* render loop */
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
+    /**************************************************************************
+     * Smart render loop (Render-on-demand + interaction mode)
+     **************************************************************************/
+
+    let needsRender = true;      // if true, next tick will render
+    let isInteracting = false;   // true while OrbitControls is being used
+    let animationLoopRunning = false;
+    const TARGET_FPS = 30; // when interacting, cap FPS to limit CPU
+
+    function requestRender() {
+      needsRender = true;
+      if (!animationLoopRunning) startAnimationLoop();
     }
-    animate();
+
+    function startAnimationLoop() {
+      if (animationLoopRunning) return;
+      animationLoopRunning = true;
+      lastRenderTime = performance.now();
+      requestAnimationFrame(tick);
+    }
+
+    function stopAnimationLoop() {
+      animationLoopRunning = false;
+    }
+
+    let lastRenderTime = 0;
+    function tick(now) {
+      if (!animationLoopRunning) return;
+      const dt = now - lastRenderTime;
+
+      if (isInteracting) {
+        // during interaction, render at up to TARGET_FPS
+        if (dt >= (1000 / TARGET_FPS)) {
+          renderer.render(scene, camera);
+          lastRenderTime = now;
+          needsRender = false;
+        }
+      } else {
+        // not interacting: render only when needed (on-demand)
+        if (needsRender) {
+          renderer.render(scene, camera);
+          needsRender = false;
+          lastRenderTime = now;
+        } else {
+          // nothing to render, stop the loop to save CPU
+          animationLoopRunning = false;
+          return;
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // OrbitControls events to switch interaction mode and request renders
+    orbit.addEventListener('start', () => {
+      isInteracting = true;
+      requestRender();
+    });
+    orbit.addEventListener('change', () => {
+      // each time controls change, mark render needed
+      requestRender();
+    });
+    orbit.addEventListener('end', () => {
+      isInteracting = false;
+      requestRender();
+    });
+
+    // resize should request render
+    window.addEventListener('resize', () => requestRender());
+
+    // page visibility: pause rendering when tab is hidden
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopAnimationLoop();
+      } else {
+        requestRender();
+      }
+    });
+
+    // initial render kick
+    requestRender();
+
   </script>
 </body>
 </html>
-
